@@ -11,11 +11,15 @@ pass straight through, so faplex never reimplements a chat view and nothing the
 harness prints (links, clipboard writes) is lost on the way. Each harness keeps its
 sessions in a daemon, so leaving a session never stops the agent.
 
+Needs [Bun](https://bun.sh). From a checkout:
+
 ```sh
-bun install
 ln -s "$PWD/bin/faplex" ~/.local/bin/faplex
 faplex   # new local sessions start in the directory you run it from
 ```
+
+`bin/faplex` runs a standalone build in `dist/` and rebuilds it (under a second) whenever
+the source is newer. `bun start` runs straight from source.
 
 See [docs/design.md](docs/design.md) for how it works.
 
