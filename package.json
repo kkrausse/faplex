@@ -1,7 +1,7 @@
 {
   "name": "faplex",
   "version": "0.1.0",
-  "description": "Fake agent (multi)plexer: one status list for Claude Code, OpenCode and Codex sessions across machines, opening each in its own CLI",
+  "description": "Like `claude agents`, but for all your harnesses and all your machines: one status list for Claude Code, Codex and OpenCode sessions, each opened in its own CLI",
   "license": "MIT",
   "repository": {
     "type": "git",
