@@ -19,7 +19,7 @@ export function NewSession(props: {
   onPick: (p: Pick, dir: string) => Promise<void>;
 }) {
   const machines = props.store.machines;
-  const localDir = process.env.FAPLEX_CWD ?? process.cwd();
+  const localDir = process.cwd();
   const [mi, setMi] = createSignal(Math.max(0, machines.findIndex((m) => m.id === props.initial?.machine)));
   const [hi, setHi] = createSignal(Math.max(0, HARNESSES.indexOf(props.initial?.harness!)));
   // Directory per machine; edits stick while the picker is open.
