@@ -2,6 +2,8 @@
 
 Like `claude agents`, but for all your harnesses and all your machines.
 
+![faplex demo](docs/demo.gif)
+
 **F**ake **a**gent (multi)**plex**er: a status list for the Claude Code, Codex and OpenCode
 sessions you already have, on every machine you can `ssh` to. Fake because it multiplexes
 nothing. The harnesses keep their own sessions running; faplex reads what they report and
