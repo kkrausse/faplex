@@ -9,7 +9,6 @@ import type { Session, Status } from "./session.ts";
 import { isUnprompted } from "./session.ts";
 import { QUIET } from "./errors.ts";
 import type { DashStore } from "./store.ts";
-import { isArchived } from "./archive.ts";
 import { colors, harnessShort, providerColor, spinner } from "./theme.ts";
 import { age, fit, relTime, shortPath } from "./format.ts";
 import { contextCell, subagentCell } from "./metrics.ts";
@@ -69,7 +68,10 @@ export function SessionList(props: {
 
   const now = Date.now();
   const all = createMemo(() => [...props.extra(), ...props.store.rows()].filter((s) => !props.hidden().has(s.key) && !isUnprompted(s)));
-  const archivedOf = (s: Session) => isArchived(s, state.marks[s.machine], now);
+  const archivedOf = (s: Session) => props.store.archivedOf(s, now);
+  const stopping = (s: Session) => !!state.archiving[s.key] && state.archiving[s.key]!.failed === undefined;
+  /** The stop error of an archived session that is still running. */
+  const stopFailed = (s: Session) => (s.stoppable ? state.archiving[s.key]?.failed : undefined);
   // Ready once every source answered, or after a few seconds so one slow host can't hold the order.
   const [timedOut, setTimedOut] = createSignal(false);
   setTimeout(() => setTimedOut(true), 5000);
@@ -112,7 +114,7 @@ export function SessionList(props: {
       if (id === "archived" && !showArchived() && !q) continue;
       for (const s of rows) items.push({ row: s, section: id }), list.push(s);
     }
-    return { items, list, archivedHidden: !showArchived() && !q ? by.get("archived")!.length : 0 };
+    return { items, list, archivedHidden: !showArchived() && !q ? by.get("archived")!.length : 0, stopFailed: by.get("archived")!.filter((s) => stopFailed(s) !== undefined).length };
   });
 
   const index = createMemo(() => Math.max(0, view().list.findIndex((s) => s.key === selected())));
@@ -147,25 +149,35 @@ export function SessionList(props: {
     return (its[i + 1]?.section === sec ? its[i + 1] : its[i - 1]?.section === sec ? its[i - 1] : undefined)?.row.key;
   };
 
-  // Archiving stops the session first, so an archived session can't wake up again (a Claude /loop
-  // or wakeup); if the stop fails it stays unarchived.
-  async function mark(s: Session, archived: boolean) {
+  const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+  // The row moves to Archived at once; the stop (so an archived session can't wake up again: a
+  // Claude /loop or wakeup) and the mark follow in the background. A failed stop leaves it
+  // archived and red, and `x` on it tries again.
+  async function archive(s: Session) {
     if (!s.id) return setFlash("not started yet");
-    if (archived && archivedOf(s) && !s.stoppable) return setFlash("already archived");
-    if (!archived && s.archived) return setFlash(`archived in ${s.harness} itself · restore it there`);
-    if (!archived && !archivedOf(s)) return setFlash("not archived");
+    if (stopping(s)) return;
+    if (archivedOf(s) && !s.stoppable) return setFlash("already archived");
     const next = neighbor(s);
+    if (!showArchived() && !archivedOf(s) && next) setSelected(next);
+    if (s.stoppable) setFlash(`stopping ${s.title}…`);
     try {
-      if (archived && s.stoppable) {
-        setFlash(`stopping ${s.title}…`);
-        await props.store.stopSession(s);
-        if (archivedOf(s)) return setFlash(`stopped ${s.title}`);
-      }
-      await props.store.mark(s, archived);
-      if (!(archived ? showArchived() : true) && next) setSelected(next);
-      setFlash(`${archived ? "archived" : "restored"} ${s.title}`);
+      const failed = await props.store.archive(s);
+      setFlash(failed === undefined ? `archived ${s.title}` : `archived ${s.title}, still running · stop failed: ${failed} · x on it retries`);
     } catch (e) {
-      setFlash(`${archived ? "stop/archive" : "restore"} failed: ${e instanceof Error ? e.message : String(e)}`);
+      setFlash(`archive failed: ${message(e)}`);
+    }
+  }
+
+  async function restore(s: Session) {
+    if (!s.id) return setFlash("not started yet");
+    if (s.archived) return setFlash(`archived in ${s.harness} itself · restore it there`);
+    if (!archivedOf(s)) return setFlash("not archived");
+    try {
+      await props.store.mark(s, false);
+      setFlash(`restored ${s.title}`);
+    } catch (e) {
+      setFlash(`restore failed: ${message(e)}`);
     }
   }
 
@@ -189,8 +201,8 @@ export function SessionList(props: {
       setFiltering(true);
     } else if (key.name === "n") props.onNew();
     else if (key.name === "tab") setShowArchived(!showArchived());
-    else if (key.name === "x" && s) void mark(s, true);
-    else if (key.name === "r" && s) void mark(s, false);
+    else if (key.name === "x" && s) void archive(s);
+    else if (key.name === "r" && s) void restore(s);
     else if (key.name === "escape" && filter()) setFilter("");
     else if (key.name === "q" || (key.ctrl && key.name === "c")) props.onQuit();
   });
@@ -267,15 +279,18 @@ export function SessionList(props: {
             };
             const active = () => current()?.key === s().key;
             const st = (): Status => s().status;
+            // Red while its stop is running, and for as long as a failed stop leaves it running.
+            const ending = () => stopping(s()) || stopFailed(s()) !== undefined;
             const color = () =>
-              st() === "needs" ? colors.permission : st() === "failed" ? colors.error : st() === "working" ? colors.selected : colors.muted;
+              ending() ? colors.error : st() === "needs" ? colors.permission : st() === "failed" ? colors.error : st() === "working" ? colors.selected : colors.muted;
             const gutter = () =>
-              st() === "working" ? spinner() : st() === "needs" ? "!" : st() === "failed" ? "×" : st() === "interrupted" ? "-" : active() ? "❯" : " ";
-            const statusText = () => (st() === "failed" || st() === "interrupted" ? st() : "");
+              stopping(s()) ? spinner() : stopFailed(s()) !== undefined ? "×" : st() === "working" ? spinner() : st() === "needs" ? "!" : st() === "failed" ? "×" : st() === "interrupted" ? "-" : active() ? "❯" : " ";
+            const statusText = () =>
+              stopping(s()) ? (s().stoppable ? "stopping…" : "archiving…") : stopFailed(s()) !== undefined ? `still running · stop failed: ${stopFailed(s())}` : st() === "failed" || st() === "interrupted" ? st() : "";
             const row = () => (
               <box height={1} flexShrink={0} flexDirection="row" backgroundColor={active() ? colors.surfaceRaised : colors.bg} onMouseDown={() => setSelected(s().key)}>
                 <box width={1} flexShrink={0}>
-                  <text fg={active() && !"needs working failed".includes(st()) ? colors.selected : color()}>{gutter()}</text>
+                  <text fg={active() && !ending() && !"needs working failed".includes(st()) ? colors.selected : color()}>{gutter()}</text>
                 </box>
                 <box flexDirection="row" flexGrow={1} flexBasis={0} minWidth={0} overflow="hidden" paddingLeft={1}>
                   <text wrapMode="none" flexShrink={0} fg={props.store.hostColor(s().machine)}>{host(s())}</text>
@@ -283,7 +298,7 @@ export function SessionList(props: {
                   <text wrapMode="none" flexShrink={0} fg={active() ? colors.selected : s().open ? colors.text : colors.muted} attributes={active() ? TextAttributes.BOLD : undefined}>
                     {fit(s().title, cols().title)}
                   </text>
-                  <text wrapMode="none" flexShrink={1} fg={color()}>{GAP + (s().detail || statusText()).split("\n")[0]}</text>
+                  <text wrapMode="none" flexShrink={1} fg={color()}>{GAP + (ending() ? statusText() : s().detail || statusText()).split("\n")[0]}</text>
                 </box>
                 {/* An empty text still takes a column, so an absent column renders nothing at all. */}
                 <Show when={cols().subagents}>
@@ -305,6 +320,9 @@ export function SessionList(props: {
                   <box height={HEADER_H} flexShrink={0} border={["top"]} borderColor={colors.border} flexDirection="row">
                     <text fg={h.header === "needs" ? colors.permission : colors.text} attributes={TextAttributes.BOLD}>{SECTIONS.find((x) => x.id === h.header)!.label}</text>
                     <text fg={colors.dim}>{` ${h.count}${h.header === "archived" && view().archivedHidden ? " · tab to show" : ""}`}</text>
+                    <Show when={h.header === "archived" && view().stopFailed}>
+                      <text fg={colors.error}>{` · ${view().stopFailed} still running (stop failed)`}</text>
+                    </Show>
                   </box>
                 )}
               </Show>

@@ -23,7 +23,8 @@ faplex   # new local sessions start in the directory you run it from
 launched it from. Run `bun install` after dependency changes. `bun start` also runs
 straight from source; no standalone build or npx is needed for local development.
 
-See [docs/design.md](docs/design.md) for how it works.
+See [docs/design.md](docs/design.md) for how it works, and [Providers](#providers) for the
+small interface a harness has to offer and how each of the three fills it.
 
 ## Trade-offs
 
@@ -108,7 +109,8 @@ started working, so one you just answered lands at its bottom, next to Needs inp
 In an open session the mouse belongs to the harness and your terminal, as if the CLI were run
 directly. A session is archived when its
 harness archived it, you archived it here, or it is finished and untouched for 7
-days. Rows are labelled `machine·harness`; the footer lists sources with problems
+days. Archiving here is not final: opening the session, or anything happening in it
+afterwards (new input, a turn starting), brings it back. Rows are labelled `machine·harness`; the footer lists sources with problems
 (red) and harnesses that aren't there (dim: not installed, unsupported, not running).
 
 The list is a table: label (the machine's `short` name and the harness as `clau`, `codex` or
@@ -144,18 +146,21 @@ lifetime billed tokens. The selected row's footer shows raw tokens and snapshot
 age. Missing data is omitted, never displayed as 0%.
 
 Archive marks live on each session's own host in `~/.config/faplex/archive.json`,
-so every dashboard sees the same marks. Restoring overrides the 7-day rule; it can't
-undo an archive made in the harness itself.
+so every dashboard sees the same marks. A mark is the time of archiving on that host's
+clock, and holds only while the session hasn't been updated since. Restoring (or opening
+the session) overrides the 7-day rule; it can't undo an archive made in the harness itself.
 
 ## Keys
 
 List: ↑↓/jk move · ⏎/→ open · n new · x stop + archive · r restore · tab show archived ·
 / filter · q quit.
 
-`x` first stops whatever is still running in the session, so an archived session can't wake
-itself up later (a Claude `/loop` or scheduled wakeup), then archives it. If the stop fails the
-session stays unarchived. `x` on an already archived but still running session just stops it.
-The conversation is kept either way; opening the session resumes it.
+`x` moves the row to Archived at once, then in the background stops whatever is still running
+in the session, so an archived session can't wake itself up later (a Claude `/loop` or
+scheduled wakeup), and writes the mark. With Archived shown, the row is red with a spinner
+until that is done. If the stop fails the session is archived anyway and stays red (the
+Archived heading says how many are still running); `x` on it tries the stop again.
+The conversation is kept either way; opening the session resumes it and takes it out of the archive.
 
 New session: ↑↓ machine · ←→ harness · tab edit start dir · ⏎ open · esc back.
 Combinations whose harness is missing or unsupported are greyed out.

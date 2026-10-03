@@ -117,7 +117,8 @@ state, Codex supplies the first-prompt preview, and OpenCode checks for a user
 message on idle sessions without an outcome (cached by update time). Live
 activity also confirms a chat has started. Claiming a session ID does not.
 The source confirms the first prompt; pressing Enter in a model picker is not
-enough. Known drafts stay hidden even after their client is closed; nothing is
+enough. Enter on a non-empty prompt line only decides where "back" goes: to the list
+instead of the new-session picker, since the source may take a moment to report the prompt. Known drafts stay hidden even after their client is closed; nothing is
 deleted or archived.
 
 ### Optional metrics
@@ -178,13 +179,27 @@ the stream's scope); stopping while a source is disconnected fails.
 
 ## Archive
 
-Archived = harness archive, OR a dashboard mark, OR (not needs/working and
-`updatedAt` older than 7 days) unless explicitly restored. Marks live on each host in
-`~/.config/faplex/archive.json` as `{ "harness:id": true | false }` (false =
-explicit restore). `x`/`r` read, modify and replace the file on that host with a
-POSIX `sh` write (temp file + `mv`); `x` stops the session first and only marks it if the stop succeeded. Last writer wins between two dashboards
-archiving at the same moment. Every dashboard reads the file through that host's
-loop record.
+Archived = harness archive, OR a dashboard mark with nothing happening since, OR (not
+needs/working and `updatedAt` older than 7 days) unless explicitly restored. Marks live on
+each host in `~/.config/faplex/archive.json` as `{ "harness:id": <ms> | true | false }`:
+a number is when it was archived, read from that host's clock (`date +%s`) because the
+sessions' `updatedAt` comes from the same clock; it holds while `updatedAt <= mark + 30 s`
+(the stop itself touches the session once more), so later activity un-archives the session
+on every dashboard without anyone writing anything. `true` is a mark from before
+timestamps and always holds; `false` is an explicit restore, written by `r` and by opening
+an archived session. `x`/`r` read, modify and replace the file on that host with a POSIX
+`sh` write (temp file + `mv`), one write per host at a time within a dashboard. Last writer
+wins between two dashboards archiving at the same moment. Every dashboard reads the file
+through that host's loop record.
+
+`x` is optimistic. The store's `archiving` map counts the session as archived from the
+keypress, so the row leaves its section once; the stop and the mark then run in the
+background. Without that the row followed each step separately: out of Working when the
+stop landed, into Finished, out again when the mark landed. A loop record read just before
+the write also still carries the old file, so marks written by this dashboard win over
+incoming records for 10 s. A failed stop still writes the mark and keeps the entry with
+its error (red row, counted in the Archived heading) until the session stops or is
+reopened; only a failed mark write puts the row back.
 
 ## UI
 

@@ -6,7 +6,7 @@ import { createDashStore, type DashStore } from "./store.ts";
 import { NewSession, type Pick } from "./new-session.tsx";
 import { SessionList } from "./list.tsx";
 import { on } from "./machines.ts";
-import { CLEAR, createModes, createShadow, isBackInput, isLeftInput, type Modes, type Shadow } from "./passthrough.ts";
+import { CLEAR, createModes, createShadow, isBackInput, isEnterInput, isLeftInput, type Modes, type Shadow } from "./passthrough.ts";
 import { hasStarted, sessionKey, type Claim, type Session } from "./session.ts";
 import { colors } from "./theme.ts";
 
@@ -34,6 +34,8 @@ type Client = {
   note?: string;
   claim?: { claim: Claim; known: ReadonlySet<string> };
   fresh?: Pick;
+  /** Enter was pressed on a non-empty prompt: probably the first prompt, which the source has yet to confirm. */
+  sent?: boolean;
   /** Last time it was on screen. */
   shownAt: number;
   /** Tail of the output, to explain a failed ssh. */
@@ -81,8 +83,10 @@ function App(props: { store: DashStore }) {
     if (!c) return;
     const input = data.toString("latin1");
     const left = isLeftInput(input) && (c.exited !== undefined || c.shadow.atPromptStart());
-    if (isBackInput(input) || left) back();
-    else if (c.exited === undefined) c.proc.terminal?.write(data);
+    if (isBackInput(input) || left) return back();
+    if (c.exited !== undefined) return;
+    if (c.fresh && !c.sent && isEnterInput(input) && !c.shadow.atPromptStart()) c.sent = true;
+    c.proc.terminal?.write(data);
   };
   const onResize = () => {
     const c = view();
@@ -124,7 +128,9 @@ function App(props: { store: DashStore }) {
     const c = view();
     // Whatever was just done in the session (a prompt sent, an answer given) shows on the list now.
     if (c) props.store.refresh(c.session.machine);
-    if (c?.fresh && c.exited === undefined) {
+    // An unused new chat goes back to the picker. Once a prompt went in, it goes back to the list,
+    // even while its source hasn't reported it as started.
+    if (c?.fresh && !c.sent && c.exited === undefined) {
       setLastPick(c.fresh);
       show(undefined);
       setScreen("new");
@@ -197,6 +203,7 @@ function App(props: { store: DashStore }) {
   }
 
   function open(s: Session) {
+    props.store.reopened(s);
     show(clients.get(s.key) ?? spawn(s));
   }
 
