@@ -67,14 +67,18 @@ export function SessionList(props: {
   let scroll: ScrollBoxRenderable | undefined;
 
   const now = Date.now();
-  const all = createMemo(() => [...props.extra(), ...props.store.rows()].filter((s) => !props.hidden().has(s.key) && !isUnprompted(s)));
+  const [timedOut, setTimedOut] = createSignal(false);
+  setTimeout(() => setTimedOut(true), 5000);
+  // A machine's archive marks come with its Claude loop record, usually after its OpenCode and
+  // Codex rows. Until they are here its rows stay off the list, or every archived session would
+  // show up in Finished for a moment.
+  const marked = (machine: string) => timedOut() || state.marks[machine] !== undefined;
+  const all = createMemo(() => [...props.extra(), ...props.store.rows()].filter((s) => !props.hidden().has(s.key) && !isUnprompted(s) && marked(s.machine)));
   const archivedOf = (s: Session) => props.store.archivedOf(s, now);
   const stopping = (s: Session) => !!state.archiving[s.key] && state.archiving[s.key]!.failed === undefined;
   /** The stop error of an archived session that is still running. */
   const stopFailed = (s: Session) => (s.stoppable ? state.archiving[s.key]?.failed : undefined);
   // Ready once every source answered, or after a few seconds so one slow host can't hold the order.
-  const [timedOut, setTimedOut] = createSignal(false);
-  setTimeout(() => setTimedOut(true), 5000);
   const ready = () => timedOut() || Object.values(state.sources).every((s) => s.loaded);
 
   // Frozen once ready; until then rows sort live.

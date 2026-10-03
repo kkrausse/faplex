@@ -192,6 +192,10 @@ an archived session. `x`/`r` read, modify and replace the file on that host with
 wins between two dashboards archiving at the same moment. Every dashboard reads the file
 through that host's loop record.
 
+A host's marks arrive with its loop record, usually after its OpenCode and Codex rows, so
+the list holds a machine's rows back until its marks are in (or 5 s passed). Otherwise
+every archived session shows in Finished for a moment at startup.
+
 `x` is optimistic. The store's `archiving` map counts the session as archived from the
 keypress, so the row leaves its section once; the stop and the mark then run in the
 background. Without that the row followed each step separately: out of Working when the
