@@ -1,0 +1,21 @@
+{
+  "name": "faplex",
+  "description": "Fake agent (multi)plexer: one status list for Claude Code, OpenCode and Codex sessions across machines, opening each in its own CLI",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun src/main.tsx",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opentui/core": "0.5.14",
+    "@opentui/solid": "0.5.14",
+    "effect": "4.0.0-rc.117",
+    "solid-js": "^1.9.15"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "^7.0.2"
+  }
+}

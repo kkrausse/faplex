@@ -1,0 +1,11 @@
+#!/bin/sh
+# Launch faplex from any directory. Opened sessions run in their own cwd.
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+# bunfig.toml (Solid JSX preload) is read from the working directory.
+export FAPLEX_CWD="${FAPLEX_CWD:-$PWD}"
+cd "$ROOT" || exit 1
+# Install dependencies when missing or when bun.lock changed since the last install (e.g. after a pull).
+if ! cmp -s bun.lock node_modules/.faplex-installed.lock 2>/dev/null; then
+  bun install --frozen-lockfile >&2 && cp bun.lock node_modules/.faplex-installed.lock || exit 1
+fi
+exec bun src/main.tsx "$@"
