@@ -7,7 +7,7 @@ import { Duration, Effect, Fiber, Schedule, Stream } from "effect";
 import type { Harness, Session } from "./session.ts";
 import { HARNESSES } from "./session.ts";
 import { QUIET, fail, type SourceError } from "./errors.ts";
-import { closeMaster, expand, home, loadMachines, localName, type Machine } from "./machines.ts";
+import { expand, home, loadMachines, localName, type Machine } from "./machines.ts";
 import { claudeSessions, hostFeed, launchClaude, stopClaude } from "./claude.ts";
 import { launchOpencode, opencodeSessions } from "./opencode.ts";
 import { codexSessions, launchCodex } from "./codex.ts";
@@ -154,10 +154,12 @@ export function createDashStore() {
     /** The machine this dashboard runs on (its entry without `ssh`, else its Tailscale name). */
     here: machines.find((m) => !m.ssh)?.id ?? localName(),
     start: () => void (fiber = Effect.runFork(program)),
-    /** Interrupt every source (cancelling forwards), then close the shared connections. */
+    /**
+     * Interrupt every source (cancelling forwards). The shared ssh connections are left alone:
+     * another dashboard may be using them, and ssh closes an unused one itself (ControlPersist).
+     */
     stop: async () => {
       if (fiber) await Effect.runPromise(Fiber.interrupt(fiber).pipe(Effect.timeout("2 seconds"), Effect.ignore));
-      machines.forEach(closeMaster);
     },
     /** The machine's name in list rows: its `short` in machines.json, else its id. */
     hostShort: (id: string) => machines.find((m) => m.id === id)?.short ?? id,

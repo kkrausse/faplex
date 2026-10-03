@@ -9,6 +9,10 @@ import { on } from "./machines.ts";
 import { CLEAR, createModes, createShadow, isBackInput, isEnterInput, isLeftInput, type Modes, type Shadow } from "./passthrough.ts";
 import { hasStarted, sessionKey, type Claim, type Session } from "./session.ts";
 import { colors } from "./theme.ts";
+import { command, register } from "./procs.ts";
+
+if (command(process.argv.slice(2))) process.exit(0);
+register();
 
 const store = createDashStore();
 store.start();
@@ -249,18 +253,32 @@ function App(props: { store: DashStore }) {
     }
   });
 
+  let quitting = false;
   const quit = async () => {
-    // Clients only; every agent lives on in its own daemon.
-    for (const c of clients.values()) c.proc.kill();
-    renderer.destroy();
-    await props.store.stop();
-    process.exit(0);
+    if (quitting) return;
+    quitting = true;
+    // Whatever below hangs or throws (a terminal that is gone, a stuck ssh), the process still ends.
+    setTimeout(() => process.exit(0), 3000);
+    try {
+      // Clients only; every agent lives on in its own daemon.
+      for (const c of clients.values()) c.proc.kill();
+      renderer.destroy();
+      await props.store.stop();
+    } finally {
+      process.exit(0);
+    }
   };
   // A dashboard whose terminal went away (tab closed, harness killed) would otherwise keep polling
   // every host with nobody watching.
   for (const sig of ["SIGHUP", "SIGTERM"] as const) process.on(sig, () => void quit());
   process.stdin.on("end", () => void quit());
   process.stdin.on("error", () => void quit());
+  process.stdout.on("error", () => void quit());
+  // The signal doesn't always arrive; being handed to init is the other sign the terminal is gone.
+  const parent = process.ppid;
+  setInterval(() => {
+    if (parent !== 1 && process.ppid === 1) void quit();
+  }, 10_000).unref?.();
 
   return (
     <box flexDirection="column" width="100%" height="100%" backgroundColor={colors.bg}>

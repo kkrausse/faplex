@@ -43,7 +43,15 @@ per host under a semaphore, so one TCP connection per host carries:
 
 sshd's `MaxSessions` (default 10) caps sessions per connection. A pane refused for
 that reason prints a message saying so. Quitting interrupts every source (which
-cancels forwards) and runs `ssh -O exit` for each host.
+cancels forwards) and leaves the connection itself: other dashboards share it, and ssh
+closes it after 10 unused minutes (`ControlPersist`), which also makes a restart within
+that time skip the connection setup.
+
+Each dashboard registers its pid in `~/.local/state/faplex/run`. `faplex ps` lists them and
+`faplex kill` ends the orphaned ones (adopted by init, or without a terminal); a dashboard
+also quits by itself on SIGHUP/SIGTERM, when its stdin or stdout fails, and when it notices
+it was handed to init. Quit has a 3 s deadline, since tearing down against a dead terminal
+or a stuck ssh used to hang and leave the dashboard polling every host.
 
 ## Harness streams
 

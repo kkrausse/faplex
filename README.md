@@ -162,6 +162,9 @@ until that is done. If the stop fails the session is archived anyway and stays r
 Archived heading says how many are still running); `x` on it tries the stop again.
 The conversation is kept either way; opening the session resumes it and takes it out of the archive.
 
+`faplex ps` lists the running dashboards and marks the ones whose terminal is gone;
+`faplex kill` stops those (`faplex kill all` stops every one). Sessions are not affected.
+
 New session: ↑↓ machine · ←→ harness · tab edit start dir · ⏎ open · esc back.
 Combinations whose harness is missing or unsupported are greyed out.
 

@@ -33,16 +33,49 @@ const MachineSchema = Schema.Struct({
 export const CONFIG_DIR = `${homedir()}/.config/faplex`;
 const MACHINES_FILE = `${CONFIG_DIR}/machines.json`;
 
-/** This machine's Tailscale name (first label of its MagicDNS name), else its short hostname. */
+const TAILSCALE = ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"];
+const tailscaleName = (json: string): string | undefined => {
+  const dns = JSON.parse(json)?.Self?.DNSName;
+  return typeof dns === "string" && dns ? dns.split(".")[0]! : undefined;
+};
+const NAME_FILE = `${homedir()}/.local/state/faplex/local-name`;
+let name: string | undefined;
+
+/**
+ * This machine's Tailscale name (first label of its MagicDNS name), else its short hostname.
+ * It is needed before anything is drawn and asking Tailscale can take seconds (up to the 3 s
+ * timeout per binary), so the last answer is kept in a file: with one, startup uses it and asks
+ * again in the background for next time.
+ */
 export function localName(): string {
-  for (const bin of ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"]) {
+  if (name) return name;
+  try {
+    name = readFileSync(NAME_FILE, "utf8").trim();
+  } catch {}
+  if (name) {
+    void (async () => {
+      for (const bin of TAILSCALE) {
+        try {
+          const p = Bun.spawn([bin, "status", "--self", "--json"], { stdout: "pipe", stderr: "ignore", timeout: 3000 });
+          const found = tailscaleName(await new Response(p.stdout).text());
+          if (found) return writeFileSync(NAME_FILE, found);
+        } catch {}
+      }
+    })();
+    return name;
+  }
+  for (const bin of TAILSCALE) {
     try {
-      const out = Bun.spawnSync([bin, "status", "--self", "--json"], { stderr: "ignore", timeout: 3000 });
-      const dns = JSON.parse(out.stdout.toString())?.Self?.DNSName;
-      if (typeof dns === "string" && dns) return dns.split(".")[0]!;
+      name = tailscaleName(Bun.spawnSync([bin, "status", "--self", "--json"], { stderr: "ignore", timeout: 3000 }).stdout.toString());
+      if (name) break;
     } catch {}
   }
-  return hostname().split(".")[0]!;
+  name ??= hostname().split(".")[0]!;
+  try {
+    mkdirSync(`${homedir()}/.local/state/faplex`, { recursive: true });
+    writeFileSync(NAME_FILE, name);
+  } catch {}
+  return name;
 }
 
 /**
@@ -101,11 +134,6 @@ const ensureMaster = (m: Machine): Effect.Effect<void, SourceError> =>
       if (open.code !== 0) return yield* fail("unreachable", `${m.ssh}: ${firstLine(open.stderr) || `ssh exited ${open.code}`}`);
     }).pipe(Semaphore.withPermit(lock));
   });
-
-/** Close the shared connection (on quit; panes and streams are gone by then). */
-export const closeMaster = (m: Machine) => {
-  if (m.ssh) Bun.spawnSync(ssh(m, "-O", "exit"), { stdout: "ignore", stderr: "ignore" });
-};
 
 type Output = { code: number; stdout: string; stderr: string };
 
