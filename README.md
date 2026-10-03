@@ -11,7 +11,14 @@ pass straight through, so faplex never reimplements a chat view and nothing the
 harness prints (links, clipboard writes) is lost on the way. Each harness keeps its
 sessions in a daemon, so leaving a session never stops the agent.
 
-Needs [Bun](https://bun.sh). From a checkout:
+Needs [Bun](https://bun.sh).
+
+```sh
+bunx faplex              # run it without installing
+bun add -g faplex        # or install the `faplex` command
+```
+
+Or from a checkout:
 
 ```sh
 ln -s "$PWD/bin/faplex" ~/.local/bin/faplex
