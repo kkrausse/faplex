@@ -1,5 +1,7 @@
 # faplex
 
+Like `claude agents`, but for all your harnesses and all your machines.
+
 **F**ake **a**gent (multi)**plex**er: a status list for the Claude Code, Codex and OpenCode
 sessions you already have, on every machine you can `ssh` to. Fake because it multiplexes
 nothing. The harnesses keep their own sessions running; faplex reads what they report and
@@ -13,6 +15,7 @@ opens the harness's own CLI on the row you pick.
   your terminal, so every harness feature works and looks the way it does without faplex.
 - **No windows kept running.** No pane or client per session. One starts when you open a row
   and is closed after 15 minutes out of view; the agent carries on in its daemon.
+- **The keys you know from `claude agents`.** ↑↓ to move, → to open, ← to come back.
 - **Sessions started anywhere show up**, not only the ones you start from faplex.
 - **Safe to quit.** It holds nothing the sessions depend on.
 
