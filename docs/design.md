@@ -164,6 +164,55 @@ Missing means unavailable, not zero. The footer shows exact tokens, the limit wh
 the harness reports one, and measurement age. Future providers can
 leave either metric absent without changing the UI contract.
 
+## List
+
+Sections: **Working**, **Needs input**, **Finished** (done, failed, interrupted, idle),
+**Archived** (collapsed; tab shows it). Known unprompted drafts are hidden, not archived or deleted.
+Row labels are `machine·harness`, the machine in
+its host color and the harness in its own. Working is ordered by when each session
+started working, so one you just answered lands at its bottom, next to Needs input.
+In an open session the mouse belongs to the harness and your terminal, as if the CLI were run
+directly. A session is archived when its
+harness archived it, you archived it here, or it is finished and untouched for 7
+days. Rows are labelled `machine·harness`; the footer lists sources with problems
+(red) and harnesses that aren't there (dim: not installed, unsupported, not running).
+
+The list is a table: label (the machine's `short` name and the harness as `clau`, `codex` or
+`openc`), session title (cut at 40 columns, or shorter on a narrow terminal so the right-hand
+columns stay on screen; the footer has it in full), status line, then **subs**, **tok** and **age** (`<1m`, `5m`, `2h`, `3d`
+since the last update). Columns are as wide as the rows on screen need, and a column
+no row has a value for is left out. The working directory is in the footer only.
+
+**subs** is `n/N` (active/total subagents), counting all descendants like the
+session-manager plugin. Counts include finished descendants; `≥N` means the bounded
+history scan was incomplete. Children are not separate top-level rows. For Claude the
+total is the session's subagent transcripts; "active" is only known for background
+sessions (their job state lists what the current turn has running).
+
+**tok** is what is in the context window (`137k`), not a percentage: Claude's
+window size isn't recorded anywhere readable, and a share of an assumed limit would
+be a guess. Where a harness does report its limit, the footer shows it next to the
+exact count.
+
+- **OpenCode:** latest assistant-response usage and that model's location-specific
+  context limit, fetched for active sessions. Completed sessions retain snapshots
+  observed while they were active. Compaction/revert boundaries are respected.
+- **Codex:** latest `thread/tokenUsage/updated` notification received on the live
+  connection. No snapshot is available at initial connection until an event arrives;
+  receiving events depends on the server's notification/subscription behavior.
+  The dashboard does not resume threads to subscribe to usage.
+- **Claude:** the last response's input tokens (fresh, cache-read and cache-write),
+  read from the session transcript, which is how Claude's own status line counts it.
+  No limit is known. Unavailable between a compaction and the next response.
+
+These are latest-response snapshots, not continuously exact streaming usage or
+lifetime billed tokens. The selected row's footer shows raw tokens and snapshot
+age. Missing data is omitted, never displayed as 0%.
+
+Archive marks live on each session's own host in `~/.config/faplex/archive.json`,
+so every dashboard sees the same marks. Restoring overrides the 7-day rule; it can't
+undo an archive made in the harness itself.
+
 ## Stop
 
 One verb per harness that ends whatever is still running, so nothing starts again unprompted.

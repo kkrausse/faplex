@@ -1,82 +1,65 @@
 # faplex
 
-**F**ake **a**gent (multi)**plex**er. Fake because it doesn't multiplex anything: the
-harnesses already keep their sessions in daemons, so faplex only lists them and opens
-the harness's own CLI on the one you pick.
+**F**ake **a**gent (multi)**plex**er: a status list for the Claude Code, Codex and OpenCode
+sessions you already have, on every machine you can `ssh` to. Fake because it multiplexes
+nothing. The harnesses keep their own sessions running; faplex reads what they report and
+opens the harness's own CLI on the row you pick.
 
-One status list for Claude Code, OpenCode and Codex sessions, on this machine and
-any others you can `ssh` to. Opening a session hands the whole terminal to the
-harness's own CLI (in a PTY, over ssh for remote machines): its output and your keys
-pass straight through, so faplex never reimplements a chat view and nothing the
-harness prints (links, clipboard writes) is lost on the way. Each harness keeps its
-sessions in a daemon, so leaving a session never stops the agent.
-
-Needs [Bun](https://bun.sh).
+- **One grouped, prioritized, real-time list.** Working, Needs input, Finished, across every
+  machine and harness, with context tokens and subagent counts.
+- **No setup on top of your harnesses.** No hooks, plugins or wrapper to launch through, and
+  nothing to install on remote machines: plain ssh and what the harness daemons already expose.
+- **It opens the real CLI.** A row is `claude attach`, `codex resume` or `opencode -s` handed
+  your terminal, so every harness feature works and looks the way it does without faplex.
+- **No windows kept running.** No pane or client per session. One starts when you open a row
+  and is closed after 15 minutes out of view; the agent carries on in its daemon.
+- **Sessions started anywhere show up**, not only the ones you start from faplex.
+- **Safe to quit.** It holds nothing the sessions depend on.
 
 ```sh
-bunx faplex              # run it without installing
+bunx faplex              # needs Bun (https://bun.sh); runs without installing
 bun add -g faplex        # or install the `faplex` command
 ```
 
-Or from a checkout:
+## How it compares
 
-```sh
-ln -s "$PWD/bin/faplex" ~/.local/bin/faplex
-faplex   # new local sessions start in the directory you run it from
-```
+✅ yes · ⚠️ partly · ❌ no
 
-`bin/faplex` runs a standalone build in `dist/` and rebuilds it (under a second) whenever
-the source is newer. `bun start` runs straight from source.
+| | faplex | [Agent Deck](https://github.com/asheshgoplani/agent-deck) | [Herdr](https://herdr.dev) | [gctrl](https://www.npmjs.com/package/gctrl) | [Paseo](https://paseo.sh) | [T3 Code](https://github.com/pingdotgg/t3code) |
+|---|---|---|---|---|---|---|
+| No setup beyond the harness | ✅ | ⚠️ launch through it, install hooks | ⚠️ becomes your terminal | ✅ | ❌ its own daemon | ❌ its own server |
+| Lists sessions started elsewhere | ✅ | ❌ only its own | ⚠️ only in its panes | ✅ | ❌ only its own | ❌ only its own |
+| Idle sessions cost nothing extra | ✅ | ❌ a live CLI each | ❌ a live CLI each | ✅ | ⚠️ its daemon | ⚠️ its server |
+| You work in the harness's own UI | ✅ | ✅ in tmux | ✅ in its pane | ✅ | ❌ its UI | ❌ its UI |
+| Live status | ✅ from the harness daemon | ⚠️ hooks, else pane parsing | ✅ reported from its panes | ⚠️ read off session files | ✅ | ✅ |
+| Several machines | ✅ ssh | ✅ ssh | ✅ ssh | ❌ | ✅ | ✅ |
+| Starts new sessions | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| Works with a harness that has no daemon | ❌ view only | ✅ | ✅ | ✅ | ⚠️ supported providers | ⚠️ supported providers |
+| Splits and layouts | ❌ | ⚠️ tmux's | ✅ | ❌ | n/a, own app | n/a, own app |
+| One UI for permissions, history, diffs | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ |
 
-See [docs/design.md](docs/design.md) for how it works.
+Filled in from each project's docs in October 2026; corrections welcome. Close relatives:
+Claude Squad (like Agent Deck), cmux (like Herdr), rejoin (like gctrl).
 
-## Trade-offs
+The short version: faplex owns neither the terminal nor the conversation. Agent Deck and Herdr
+own the terminal, which gets them persistent panes for any CLI at the price of a client per
+session. Paseo and T3 Code own the conversation, which gets them one UI everywhere at the price
+of integrating deeply with every provider. gctrl is the nearest relative: same hands-off stance,
+but local only, no new sessions, and status inferred from files.
 
-faplex owns neither the terminal runtime nor the conversation. Each harness's daemon
-owns execution and session identity; faplex asks it what exists, shows status, and
-runs the harness's attach command when you open a row.
+## What can break
 
-What that buys:
+faplex asks very little of a harness: a list of sessions with a status, a command that attaches
+to one by id, and a command that starts one (the [Providers](#providers) table is the whole
+contract). It never parses terminal output or speaks a harness's conversation protocol, so a
+harness can change its UI, its tools and its transcript rendering without faplex noticing.
 
-- **The native UI, untouched.** No chat view to reimplement and keep in step with each
-  harness, and no emulator in the middle dropping links or clipboard writes.
-- **Clients are disposable.** A session costs a TUI client only while you look at it
-  (plus 15 minutes); the work carries on in the daemon. With one daemon for all sessions
-  (OpenCode, Codex) that is most of the per-session cost. Claude still keeps a process
-  per background session.
-- **Sessions it didn't start show up.** Anything the daemon knows about is listed,
-  whichever terminal or machine it came from.
-- **Status from the live process**, not from scraping a pane or guessing from file
-  mtimes.
-- **Nothing to install on remotes** beyond the harnesses: ssh and POSIX `sh`.
-- **faplex can die.** It holds no state the sessions depend on.
-
-What it costs:
-
-- **It needs a harness with a session daemon** and an attach-by-id CLI. A harness that
-  only runs in the foreground can be listed at best (plain interactive `claude` rows
-  are view-only).
-- **Adapters track young, moving surfaces** (`claude agents --json`, the OpenCode 2.x
-  service API, the Codex app-server socket), so harness updates can break a source.
-- **No unified controls.** Permissions, history, diffs and rollback are whatever each
-  harness's own UI gives you, and they differ.
-- **New-session identity is sometimes a guess**: OpenCode and Codex don't hand back an
-  id, so the new session is claimed as the first new one in that directory.
-- **No layouts.** One session on screen at a time; splits are your terminal's job.
-
-Compared with what else exists:
-
-| | Owns | Sessions it sees | Idle session costs | Machines |
-|---|---|---|---|---|
-| **faplex** | nothing | whatever the harness daemons hold | daemon only | ssh |
-| tmux-based managers ([Agent Deck](https://github.com/asheshgoplani/agent-deck), Claude Squad) | tmux sessions running the CLIs | the ones it launched | a live CLI per session | ssh (Agent Deck) |
-| agent terminals ([Herdr](https://herdr.dev), [cmux](https://github.com/manaflow-ai/cmux)) | the terminal and its panes | agents running in its panes | a live CLI per pane | Herdr: yes |
-| session indexers ([gctrl](https://www.npmjs.com/package/gctrl), [rejoin](https://pypi.org/project/rejoin/)) | nothing | whatever is on disk | nothing | local only |
-| control planes ([Paseo](https://paseo.sh), [T3 Code](https://github.com/pingdotgg/t3code)) | the conversation UI and provider integration | the ones it runs | its own server | yes |
-
-The indexers are the nearest relatives: same hands-off stance, but they read status off
-session files, don't start sessions and stay on one machine. The others give you more
-(persistent panes for any CLI, one UI for every provider) by owning more.
+What it does depend on is young: `claude agents --json`, the OpenCode 2.x service API and the
+Codex app-server socket are all recent, and a change to one needs an adapter fix. When that
+happens the damage is contained: every response is schema-checked, so one harness on one machine
+shows an error in the footer and the rest of the list keeps working. Context tokens and subagent
+counts lean on more (Claude's are read from its transcript files); they are optional and drop
+out on their own without affecting the list.
 
 ## Machines
 
@@ -105,52 +88,14 @@ All ssh traffic to a host shares one connection (ControlMaster sockets in
 
 ## List
 
-Sections: **Working**, **Needs input**, **Finished** (done, failed, interrupted, idle),
-**Archived** (collapsed; tab shows it). Known unprompted drafts are hidden, not archived or deleted.
-Row labels are `machine·harness`, the machine in
-its host color and the harness in its own. Working is ordered by when each session
-started working, so one you just answered lands at its bottom, next to Needs input.
-In an open session the mouse belongs to the harness and your terminal, as if the CLI were run
-directly. A session is archived when its
-harness archived it, you archived it here, or it is finished and untouched for 7
-days. Rows are labelled `machine·harness`; the footer lists sources with problems
-(red) and harnesses that aren't there (dim: not installed, unsupported, not running).
+Sections: **Working**, **Needs input**, **Finished** (done, failed, interrupted, idle) and
+**Archived** (collapsed; tab shows it). Each row is `machine·harness`, title, status line, then
+**subs** (active/total subagents), **tok** (tokens in the context window) and **age** (time
+since the last update). A session is archived when its harness archived it, you archived it
+here, or it has been finished and untouched for 7 days. Unprompted drafts are hidden.
 
-The list is a table: label (the machine's `short` name and the harness as `clau`, `codex` or
-`openc`), session title (cut at 40 columns, or shorter on a narrow terminal so the right-hand
-columns stay on screen; the footer has it in full), status line, then **subs**, **tok** and **age** (`<1m`, `5m`, `2h`, `3d`
-since the last update). Columns are as wide as the rows on screen need, and a column
-no row has a value for is left out. The working directory is in the footer only.
-
-**subs** is `n/N` (active/total subagents), counting all descendants like the
-session-manager plugin. Counts include finished descendants; `≥N` means the bounded
-history scan was incomplete. Children are not separate top-level rows. For Claude the
-total is the session's subagent transcripts; "active" is only known for background
-sessions (their job state lists what the current turn has running).
-
-**tok** is what is in the context window (`137k`), not a percentage: Claude's
-window size isn't recorded anywhere readable, and a share of an assumed limit would
-be a guess. Where a harness does report its limit, the footer shows it next to the
-exact count.
-
-- **OpenCode:** latest assistant-response usage and that model's location-specific
-  context limit, fetched for active sessions. Completed sessions retain snapshots
-  observed while they were active. Compaction/revert boundaries are respected.
-- **Codex:** latest `thread/tokenUsage/updated` notification received on the live
-  connection. No snapshot is available at initial connection until an event arrives;
-  receiving events depends on the server's notification/subscription behavior.
-  The dashboard does not resume threads to subscribe to usage.
-- **Claude:** the last response's input tokens (fresh, cache-read and cache-write),
-  read from the session transcript, which is how Claude's own status line counts it.
-  No limit is known. Unavailable between a compaction and the next response.
-
-These are latest-response snapshots, not continuously exact streaming usage or
-lifetime billed tokens. The selected row's footer shows raw tokens and snapshot
-age. Missing data is omitted, never displayed as 0%.
-
-Archive marks live on each session's own host in `~/.config/faplex/archive.json`,
-so every dashboard sees the same marks. Restoring overrides the 7-day rule; it can't
-undo an archive made in the harness itself.
+[docs/design.md](docs/design.md#list) has the details: ordering, how each harness's token and
+subagent numbers are measured, and where archive marks live.
 
 ## Keys
 
@@ -204,3 +149,13 @@ OpenCode 1.x and Claude Code without `agents --json` show as unsupported.
 
 Interactive Claude sessions (plain `claude` in another terminal) are listed but
 marked `view`: `claude attach` only accepts background jobs.
+
+## From a checkout
+
+```sh
+ln -s "$PWD/bin/faplex" ~/.local/bin/faplex
+```
+
+`bin/faplex` runs a standalone build in `dist/` and rebuilds it (under a second) whenever the
+source is newer. `bun start` runs straight from source. [docs/design.md](docs/design.md) covers
+how it works.
