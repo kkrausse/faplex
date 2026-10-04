@@ -119,6 +119,12 @@ Status: `needs | working | done | failed | interrupted | idle` (idle = never
 prompted, e.g. a fresh `claude --bg`). A new session's claim is data:
 `{ id }` (Claude) or `{ firstNewIn: dir }` (OpenCode/Codex).
 
+`claude --bg` refuses a folder that was never trusted ("Workspace not trusted"), and only the
+plain CLI shows the trust prompt. The launch then returns `{ trust: true }` with `claude` as the
+pane command, so the prompt comes up in the pane. While that pane is on screen the launch is
+retried every second; once the prompt is accepted it succeeds, and the pane is swapped for
+`claude attach` on the new background session. Declining exits the CLI as usual.
+
 Status is the top level's own turn, not whether anything is running. Claude's process status is
 `busy` for as long as anything the session started is running (a subagent, a dev server left up, a
 shell loop that never exits), so a live process's job `tempo` decides: `blocked` is needs input,

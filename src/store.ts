@@ -20,7 +20,11 @@ export type Source = { machine: string; harness: Harness; rows: Session[]; probl
 export const sourceKey = (machine: string, harness: Harness) => `${machine}/${harness}`;
 
 /** What to run in a new session's pane, and how to recognize the session once its source reports it. */
-export type Launch = { cmd: string[]; cwd: string; claim: Claim };
+export type Launch = { cmd: string[]; cwd: string } & (
+  | { claim: Claim }
+  /** The harness won't start a session in this folder until its trust prompt is accepted; `cmd` shows that prompt. */
+  | { trust: true }
+);
 
 const retryPolicy = Schedule.exponential("1 second").pipe(
   Schedule.setInputType<SourceError>(),

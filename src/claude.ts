@@ -255,6 +255,8 @@ export const claudeSessions = (m: Machine, rec: HostRecord): Effect.Effect<Sessi
 export const launchClaude = (m: Machine, dir: string) =>
   Effect.gen(function* () {
     const out = yield* exec(m, ["claude", "--bg"], { cwd: dir, timeout: 60_000 }).pipe(Effect.map((o) => o.stdout + o.stderr));
+    // `claude --bg` refuses a folder that was never trusted; the prompt only comes up in the plain CLI.
+    if (/Workspace not trusted/.test(out)) return { cmd: ["claude"], cwd: dir, trust: true as const };
     const id = out.replace(/\x1b\[[0-9;]*m/g, "").match(/backgrounded · (\w+)/)?.[1];
     if (!id) return yield* fail("failed", firstLine(out) || "claude --bg printed no id");
     return { cmd: ["claude", "attach", id], cwd: dir, claim: { id } };

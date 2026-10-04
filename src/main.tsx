@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { render, useRenderer } from "@opentui/solid";
 import { Show, createEffect, createSignal } from "solid-js";
-import { createDashStore, type DashStore } from "./store.ts";
+import { createDashStore, type DashStore, type Launch } from "./store.ts";
 import { NewSession, type Pick } from "./new-session.tsx";
 import { SessionList } from "./list.tsx";
 import { on } from "./machines.ts";
@@ -213,16 +213,45 @@ function App(props: { store: DashStore }) {
     }
     const known = new Set(props.store.rows(p.harness).filter((s) => s.machine === p.machine).map((s) => s.key));
     const l = await props.store.launch(p.machine, p.harness, dir);
-    const placeholder: Session = {
-      machine: p.machine, harness: p.harness, key: sessionKey(p.machine, p.harness, `new-${Date.now()}`), id: "", title: `new ${p.harness} session`,
-      cwd: l.cwd, status: "working", detail: "", model: "", updatedAt: Date.now(), archived: false, stoppable: false, open: { cmd: l.cmd, cwd: l.cwd },
-    };
-    const c = spawn(placeholder);
-    c.claim = { claim: l.claim, known };
+    const c = spawn(placeholder(p, l));
     c.fresh = p;
+    if ("trust" in l) awaitTrust(c, p, dir, known);
+    else c.claim = { claim: l.claim, known };
     syncLive();
     setScreen("list");
     show(c);
+  }
+  const placeholder = (p: Pick, l: Launch): Session => ({
+    machine: p.machine, harness: p.harness, key: sessionKey(p.machine, p.harness, `new-${Date.now()}`), id: "", title: `new ${p.harness} session`,
+    cwd: l.cwd, status: "working", detail: "", model: "", updatedAt: Date.now(), archived: false, stoppable: false, open: { cmd: l.cmd, cwd: l.cwd },
+  });
+
+  // `c` shows the harness's trust prompt for an untrusted folder. Once the prompt is accepted the
+  // launch goes through, and the pane is swapped for the session it was meant to open. Only tried
+  // while the pane is on screen: that is when the prompt can be answered.
+  function awaitTrust(c: Client, p: Pick, dir: string, known: ReadonlySet<string>) {
+    let trying = false;
+    const timer = setInterval(async () => {
+      if (c.exited !== undefined || clients.get(c.session.key) !== c) return clearInterval(timer);
+      if (trying || view() !== c) return;
+      trying = true;
+      try {
+        const l = await props.store.launch(p.machine, p.harness, dir);
+        if ("trust" in l || c.exited !== undefined || clients.get(c.session.key) !== c) return;
+        clearInterval(timer);
+        const next = spawn(placeholder(p, l));
+        next.claim = { claim: l.claim, known };
+        next.fresh = p;
+        const shown = view() === c;
+        drop(c);
+        if (shown) show(next);
+        c.proc.kill();
+      } catch {
+        // Unreachable for a moment, or still refused for another reason: the next tick tries again.
+      } finally {
+        trying = false;
+      }
+    }, 1000);
   }
 
   createEffect(() => {
