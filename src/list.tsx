@@ -54,6 +54,8 @@ export function SessionList(props: {
   /** Rows for used new chats their source hasn't reported yet. */
   extra: () => Session[];
   onOpen: (s: Session) => void;
+  /** Open with a new client, closing the live one. */
+  onReattach: (s: Session) => void;
   onNew: () => void;
   onQuit: () => void;
 }) {
@@ -218,7 +220,12 @@ export function SessionList(props: {
     } else if (key.name === "n") props.onNew();
     else if (key.name === "tab") setShowArchived(!showArchived());
     else if (key.name === "x" && s) void archive(s);
-    else if (key.name === "r" && s) void restore(s);
+    else if (key.name === "r" && key.shift && s) {
+      // A new chat's command would start another session rather than attach to this one.
+      if (!s.id) setFlash("not started yet");
+      else if (s.open) props.onReattach(s);
+      else setFlash(s.closedReason ?? "can't open this session here");
+    } else if (key.name === "r" && s) void restore(s);
     else if (key.name === "escape" && filter()) setFilter("");
     else if (key.name === "q" || (key.ctrl && key.name === "c")) props.onQuit();
   });
@@ -374,7 +381,7 @@ export function SessionList(props: {
           fallback={
             <text fg={colors.dim} wrapMode="none">
               {flash() ? `${flash()} · ` : ""}
-              {filter() ? `filter: ${filter()} · ` : ""}↑↓ move · ⏎ open · n new · x stop+archive · r restore · tab archived · / filter · q quit · ctrl+] back from a session
+              {filter() ? `filter: ${filter()} · ` : ""}↑↓ move · ⏎ open · n new · x stop+archive · r restore · R reattach · tab archived · / filter · q quit · ctrl+] back from a session
             </text>
           }
         >

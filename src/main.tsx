@@ -139,7 +139,8 @@ function App(props: { store: DashStore }) {
   }
 
   function drop(c: Client) {
-    clients.delete(c.session.key);
+    // A reattached session already has its next client under the same key.
+    if (clients.get(c.session.key) === c) clients.delete(c.session.key);
     c.shadow.destroy();
     syncLive();
   }
@@ -202,6 +203,17 @@ function App(props: { store: DashStore }) {
   function open(s: Session) {
     props.store.reopened(s);
     show(clients.get(s.key) ?? spawn(s));
+  }
+
+  // For a pane that may have gone stale: closes the session's client and attaches a new one. The
+  // agent itself lives in its daemon and isn't touched.
+  function reattach(s: Session) {
+    const c = clients.get(s.key);
+    if (c) {
+      drop(c);
+      if (c.exited === undefined) c.proc.kill();
+    }
+    open(s);
   }
 
   async function pick(p: Pick, dir: string) {
@@ -329,6 +341,7 @@ function App(props: { store: DashStore }) {
               hidden={freshKeys}
               extra={pending}
               onOpen={open}
+              onReattach={reattach}
               onQuit={() => void quit()}
             />
           )}
