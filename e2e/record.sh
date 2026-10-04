@@ -90,8 +90,8 @@ see "Finished 2"
 see "build/ cleared and recreated"
 sleep 0.9
 
-# 4. Steer the Codex session while it is still working. Codex holds a message typed mid-turn
-#    until the next tool call; esc interrupts the model and sends it at once.
+# 4. A follow-up for the Codex session while it is still working. Codex queues a message typed
+#    mid-turn until the next tool call and shows it above the prompt; the recording leaves it queued.
 mark open4
 key up; sleep 0.25; key up; sleep 0.4
 key right
@@ -102,11 +102,7 @@ key --pace-ms "$PACE" "text:keep it under 20 seconds and make it a GIF"
 sleep 0.25
 key enter
 see "Messages to be submitted"
-sleep 0.9
-mark esc
-key escape
-see "Got it: a GIF"
-sleep 1.1
+sleep 1.6
 mark back4
 back
 see "Working 3"
@@ -133,8 +129,7 @@ cat > "$edit" <<'EOF'
   {"from":"approve","to":"back3","caption":"1 · approve in Claude Code's own prompt"},
   {"from":"back3","to":"open4","caption":"ctrl+] back","speed":1.6},
   {"from":"open4","to":"steer","caption":"↑ ↑ · → open the working Codex session"},
-  {"from":"steer","to":"esc","caption":"type a follow-up · ⏎"},
-  {"from":"esc","to":"back4","caption":"esc · interrupt and send it now"},
+  {"from":"steer","to":"back4","caption":"type a follow-up · ⏎ · Codex queues it"},
   {"from":"back4","to":"end","caption":"ctrl+] back"}
 ]}
 EOF

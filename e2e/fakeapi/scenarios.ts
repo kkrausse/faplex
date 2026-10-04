@@ -31,8 +31,10 @@ export const scenarios: readonly Scenario[] = [
     steps: [{ hold: "migrate", say: "Listing the current crontab entries.", text: "All five cron jobs now run as systemd timers." }],
   },
   {
-    // The follow-up that redirects the demo session below. Listed first: it is matched on the
-    // last prompt alone, and must win over "demo" in the same conversation.
+    // The follow-up that redirects the demo session below, once Codex sends it (it queues a
+    // message typed mid-turn; esc sends it at once). The recording leaves it queued, so this only
+    // answers when the rig is driven by hand. Listed first: it is matched on the last prompt
+    // alone, and must win over "demo" in the same conversation.
     name: "demo-steer",
     match: /20 seconds/i,
     inputTokens: 14_800,

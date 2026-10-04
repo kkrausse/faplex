@@ -170,3 +170,8 @@ ln -s "$PWD/bin/faplex" ~/.local/bin/faplex
 `bin/faplex` runs a standalone build in `dist/` and rebuilds it (under a second) whenever the
 source is newer. `bun start` runs straight from source. [docs/design.md](docs/design.md) covers
 how it works.
+
+`e2e/` is an integration rig: docker compose starts three machines that ssh to each other, each
+with the real Claude Code, Codex and OpenCode pointed at a fake model API, and seeds a few
+sessions (`e2e/compose.yaml` lists the commands). The demo above is recorded on it:
+`e2e/record.sh` writes `e2e/out/demo.gif`, which is copied to `docs/demo.gif`.
