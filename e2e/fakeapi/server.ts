@@ -180,6 +180,10 @@ async function anthropicMessages(req: Request, path: string) {
   const side = sideRequest(turn, true);
   if (side !== undefined) {
     record({ method: "POST", path, wire: "anthropic", model: body.model, note: `side:${side.kind}`, handled: true }, text);
+    // A real model takes a moment. Answering in milliseconds makes Claude write state.json twice
+    // within one second, and faplex's host loop (which compares whole-second mtimes) then keeps
+    // showing the first write's status line.
+    if (side.kind === "job-state") await Bun.sleep(1500);
     return anthropicReply(body, side.text, { input: 120 }, "end_turn");
   }
   const { scenario, n, step } = choose(turn);

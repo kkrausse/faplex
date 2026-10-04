@@ -9,12 +9,12 @@ import { CodexRpc } from "/home/dev/faplex/src/codex-rpc.ts";
 
 type Harness = "claude" | "codex" | "opencode";
 type Expect = "working" | "needs" | "done";
-type Seed = { harness: Harness; dir: string; title: string; prompt: string; expect: Expect };
+type Seed = { harness: Harness; dir: string; title: string; prompt: string; expect: Expect; /** OpenCode only: its create API takes a caller-chosen id, which keeps the list footer the same every run. */ id?: string };
 
 const HOME = homedir();
 const TIMEOUT_MS = 60_000;
 
-// The fake API decides where a prompt ends up: "dependency audit" / "flaky checkout" / "migrate … to"
+// The fake API decides where a prompt ends up: "dependency audit" / "flaky checkout" / "migrate … to" / "healthz"
 // hold the stream open (Working), "rate limit" / "clean up" / "drop the" ask to run a shell command
 // (Needs input), anything else is answered (Finished). `expect` is what the seed waits for.
 // Every harness appears once in every state.
@@ -22,15 +22,15 @@ const PLAN: Record<string, Seed[]> = {
   laptop: [
     { harness: "claude", dir: "~/src/shop-api", title: "Fix flaky checkout test", prompt: "fix the flaky checkout test", expect: "working" },
     { harness: "codex", dir: "~/src/shop-api", title: "Add rate limiting to public API", prompt: "add rate limiting to the public API", expect: "needs" },
-    { harness: "opencode", dir: "~/src/site", title: "Tidy the landing page copy", prompt: "tidy the landing page copy", expect: "done" },
+    { harness: "opencode", dir: "~/src/site", title: "Tidy the landing page copy", prompt: "tidy the landing page copy", expect: "done", id: "ses_tidy_landing_page" },
   ],
   devbox: [
     { harness: "codex", dir: "~/src/infra", title: "Nightly dependency audit", prompt: "run the nightly dependency audit", expect: "working" },
-    { harness: "opencode", dir: "~/src/infra", title: "Drop the staging tables", prompt: "drop the staging tables", expect: "needs" },
+    { harness: "opencode", dir: "~/src/infra", title: "Drop the staging tables", prompt: "drop the staging tables", expect: "needs", id: "ses_drop_staging_tables" },
     { harness: "claude", dir: "~/src/infra", title: "Bump the terraform provider", prompt: "bump the terraform provider", expect: "done" },
   ],
   pi: [
-    { harness: "opencode", dir: "~/src/site", title: "Migrate cron jobs to systemd timers", prompt: "migrate the cron jobs to systemd timers", expect: "working" },
+    { harness: "opencode", dir: "~/src/site", title: "Migrate cron jobs to systemd timers", prompt: "migrate the cron jobs to systemd timers", expect: "working", id: "ses_migrate_cron_jobs" },
     { harness: "claude", dir: "~/src/site", title: "Clean up stale nginx configs", prompt: "clean up the stale nginx configs", expect: "needs" },
     { harness: "codex", dir: "~/src/site", title: "Document the backup script", prompt: "document the backup script", expect: "done" },
   ],
@@ -105,7 +105,7 @@ async function seedOpencode(s: Seed) {
     if (!r.ok) throw new Error(`opencode ${path}: ${r.status} ${await r.text()}`);
     return ((await r.json()) as { data: any }).data;
   };
-  const id: string = (await api("/api/session", { title: s.title, location: { directory: expand(s.dir) } })).id;
+  const id: string = (await api("/api/session", { id: s.id, title: s.title, location: { directory: expand(s.dir) } })).id;
   await api(`/api/session/${id}/prompt`, { text: s.prompt });
   await until(`opencode ${id} ${s.expect}`, async () => {
     if (s.expect === "done") return (await api(`/api/session/${id}`)).outcome === "succeeded";
