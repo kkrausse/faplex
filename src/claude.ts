@@ -9,7 +9,7 @@ import { Effect, Schema, Stream } from "effect";
 import { decodeJson, fail, firstLine, type SourceError } from "./errors.ts";
 import { exec, lines, type Machine } from "./machines.ts";
 import { ARCHIVE_FILE } from "./archive.ts";
-import { sessionKey, type ContextUsage, type Session, type Status } from "./session.ts";
+import { sessionKey, type Background, type ContextUsage, type Session, type Status } from "./session.ts";
 
 const TICK_S = 2;
 
@@ -131,8 +131,12 @@ const decodeEntries = decodeJson(Schema.Array(Entry), "claude agents --json");
 const JobState = Schema.Struct({
   detail: Schema.optionalKey(Schema.NullOr(Schema.String)),
   needs: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  // What the current turn fanned out to; an entry without `doneAt` is still running.
-  fan: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.Struct({ kind: Schema.optionalKey(Schema.String), doneAt: Schema.optionalKey(Schema.NullOr(Schema.Number)) })))),
+  // The top level's own turn: "active" while it runs, "blocked" on the user, "idle" once it ended.
+  tempo: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  // What the session started in the background (subagents, shells); an entry without `doneAt` is still running.
+  fan: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.Struct({
+    kind: Schema.optionalKey(Schema.String), label: Schema.optionalKey(Schema.NullOr(Schema.String)), doneAt: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  })))),
 });
 const decodeJob = decodeJson(JobState, "state.json");
 
@@ -172,6 +176,9 @@ function underPaseo(pid: number | undefined): boolean {
   return !!ppid && Bun.spawnSync(["ps", "-o", "comm=", "-p", ppid]).stdout.toString().includes("Paseo");
 }
 
+const background = (running: readonly { label?: string | null }[], kind: Background["kind"]): Background | undefined =>
+  running.length ? { kind, count: running.length, label: running[0]!.label ?? "" } : undefined;
+
 /** Sessions from one record; `missing` when the host has no claude. */
 export const claudeSessions = (m: Machine, rec: HostRecord): Effect.Effect<Session[], SourceError> =>
   Effect.gen(function* () {
@@ -188,13 +195,22 @@ export const claudeSessions = (m: Machine, rec: HostRecord): Effect.Effect<Sessi
         const job = raw ? yield* decodeJob(raw.text).pipe(Effect.orElseSucceed(() => ({}) as typeof JobState.Type)) : undefined;
         // A fresh `claude --bg` session reports "blocked" until its first prompt.
         const unprompted = /send a prompt to start/.test(job?.needs ?? "");
+        const running = (kind: string) => job?.fan?.filter((f) => f.kind === kind && !f.doneAt) ?? [];
+        const agents = running("agent"), shells = running("shell");
         // `status` is the process (busy / waiting / idle); `state` is the session's own account of its
         // task, which stays "working" when a turn ends without declaring it done. So activity comes
         // from `status`, `state` only says how an idle session ended (or stands in when `status` is absent).
+        const proc = e.status ?? (e.state === "blocked" ? "waiting" : e.state === "working" ? "busy" : "idle");
+        // But the process is also busy for as long as anything it started is running: a dev server
+        // left up after the last turn, a subagent, a shell loop that never exits. The job's `tempo`
+        // is the top level's own turn, so a live process's tempo decides what "busy" means. A dead
+        // process leaves its last tempo behind, so then only `state` counts.
+        const tempo = e.status ? (job?.tempo ?? undefined) : undefined;
         const status: Status =
           unprompted ? "idle"
-          : (e.status ?? (e.state === "blocked" ? "waiting" : e.state === "working" ? "busy" : "idle")) === "waiting" ? "needs"
-          : (e.status ?? (e.state === "working" ? "busy" : "idle")) === "busy" ? "working"
+          : proc === "waiting" || (tempo ? tempo === "blocked" : e.state === "blocked") ? "needs"
+          // A turn that ended with subagents out is woken by their results; a shell may never finish.
+          : proc === "busy" && (tempo !== "idle" || agents.length) ? "working"
           : e.state === "done" ? "done"
           : e.state === "failed" ? "failed"
           : e.state === "interrupted" || e.state === "stopped" || e.state === "killed" ? "interrupted"
@@ -217,9 +233,8 @@ export const claudeSessions = (m: Machine, rec: HostRecord): Effect.Effect<Sessi
           prompted: unprompted ? false : job?.needs || job?.detail ? true : undefined,
           // Every subagent the session ever started has a transcript; only a background job says
           // which are running now.
-          subagents: transcript?.subagents
-            ? { total: transcript.subagents, active: job?.fan?.filter((f) => f.kind === "agent" && !f.doneAt).length ?? 0, complete: true }
-            : undefined,
+          subagents: transcript?.subagents ? { total: transcript.subagents, active: agents.length, complete: true } : undefined,
+          background: background(agents, "agent") ?? background(shells, "shell"),
           context: context?.usage,
           detail,
           model: context?.model ?? "",

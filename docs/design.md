@@ -119,6 +119,16 @@ Status: `needs | working | done | failed | interrupted | idle` (idle = never
 prompted, e.g. a fresh `claude --bg`). A new session's claim is data:
 `{ id }` (Claude) or `{ firstNewIn: dir }` (OpenCode/Codex).
 
+Status is the top level's own turn, not whether anything is running. Claude's process status is
+`busy` for as long as anything the session started is running (a subagent, a dev server left up, a
+shell loop that never exits), so a live process's job `tempo` decides: `blocked` is needs input,
+`idle` is a turn that ended (finished by `state`, or still working if subagents are out, since
+their results wake it). A dead process leaves its last tempo behind, so then only `state` counts.
+
+`background?: { kind: "agent" | "shell", count, label }` is what else is running, whatever the
+status: the running `fan` entries of the job state, subagents first. The list draws it next to
+the gutter (`⑂` or `$`) and names it in the footer. Claude background sessions only so far.
+
 `prompted` is independent of status: false means a known empty draft; absent
 means unknown (do not hide it). Claude recognises its initial "send a prompt"
 state, Codex supplies the first-prompt preview, and OpenCode checks for a user
