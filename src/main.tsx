@@ -6,7 +6,7 @@ import { createDashStore, type DashStore } from "./store.ts";
 import { NewSession, type Pick } from "./new-session.tsx";
 import { SessionList } from "./list.tsx";
 import { on } from "./machines.ts";
-import { CLEAR, createModes, createShadow, isBackInput, isEnterInput, isLeftInput, type Modes, type Shadow } from "./passthrough.ts";
+import { CLEAR, createModes, createShadow, isBackInput, isLeftInput, type Modes, type Shadow } from "./passthrough.ts";
 import { hasStarted, sessionKey, type Claim, type Session } from "./session.ts";
 import { colors } from "./theme.ts";
 import { command, register } from "./procs.ts";
@@ -24,8 +24,8 @@ const REAP_MS = 15 * 60 * 1000;
 // renderer is suspended and the CLI owns the real terminal: output and keys pass straight through.
 // It outlives the view: going back to the list hides it, reopening makes it repaint.
 // A new session starts under a placeholder key; `claim` finds its real row once its source reports it.
-// `fresh` marks an unused new chat: it is cached for reuse, hidden from the list, and "back" from
-// it returns to the picker.
+// `fresh` marks an unused new chat: it is cached for reuse (the picker reopens on it) and hidden
+// from the list until its source reports a prompt.
 type Client = {
   session: Session;
   proc: Bun.Subprocess;
@@ -38,8 +38,6 @@ type Client = {
   note?: string;
   claim?: { claim: Claim; known: ReadonlySet<string> };
   fresh?: Pick;
-  /** Enter was pressed on a non-empty prompt: probably the first prompt, which the source has yet to confirm. */
-  sent?: boolean;
   /** Last time it was on screen. */
   shownAt: number;
   /** Tail of the output, to explain a failed ssh. */
@@ -89,7 +87,6 @@ function App(props: { store: DashStore }) {
     const left = isLeftInput(input) && (c.exited !== undefined || c.shadow.atPromptStart());
     if (isBackInput(input) || left) return back();
     if (c.exited !== undefined) return;
-    if (c.fresh && !c.sent && isEnterInput(input) && !c.shadow.atPromptStart()) c.sent = true;
     c.proc.terminal?.write(data);
   };
   const onResize = () => {
@@ -132,14 +129,10 @@ function App(props: { store: DashStore }) {
     const c = view();
     // Whatever was just done in the session (a prompt sent, an answer given) shows on the list now.
     if (c) props.store.refresh(c.session.machine);
-    // An unused new chat goes back to the picker. Once a prompt went in, it goes back to the list,
-    // even while its source hasn't reported it as started.
-    if (c?.fresh && !c.sent && c.exited === undefined) {
-      setLastPick(c.fresh);
-      show(undefined);
-      setScreen("new");
-      return;
-    }
+    // Always the list, a new chat included: whether its first prompt went in can't be told from
+    // the keys (a paste or dictation delivers text and Enter as one chunk). An unused one stays
+    // cached, and `n` reopens the picker on it.
+    if (c?.fresh && c.exited === undefined) setLastPick(c.fresh);
     show(undefined);
     if (c?.exited !== undefined) drop(c);
     setMount({ n: mount().n + 1, selected: c?.session.key, flash });

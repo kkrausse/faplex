@@ -14,9 +14,6 @@ const isPlainLeft = /^(?:\x1b\[D|\x1bOD|\x1b\[1;1(?::[12])?D)$/;
 
 export const isBackInput = (input: string) => isCtrlRightBracket.test(input);
 export const isLeftInput = (input: string) => isPlainLeft.test(input);
-// Unmodified Enter: legacy, and the kitty form (press).
-const isPlainEnter = /^(?:\r|\x1b\[13(?:;1(?::1)?)?u)$/;
-export const isEnterInput = (input: string) => isPlainEnter.test(input);
 
 // ← leaves the session when the cursor sits right after an input prompt with nothing typed before it.
 // A false positive is cheap: the client stays alive and reopening restores it as it was.

@@ -135,8 +135,9 @@ state, Codex supplies the first-prompt preview, and OpenCode checks for a user
 message on idle sessions without an outcome (cached by update time). Live
 activity also confirms a chat has started. Claiming a session ID does not.
 The source confirms the first prompt; pressing Enter in a model picker is not
-enough. Enter on a non-empty prompt line only decides where "back" goes: to the list
-instead of the new-session picker, since the source may take a moment to report the prompt. Known drafts stay hidden even after their client is closed; nothing is
+enough. "Back" from a new chat always goes to the list, prompted or not: the keys cannot say
+whether a prompt went in (a paste delivers text and Enter as one chunk), and the source may take
+a moment to report it. `n` reopens the picker on an unused one. Known drafts stay hidden even after their client is closed; nothing is
 deleted or archived.
 
 ### Optional metrics

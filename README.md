@@ -130,8 +130,8 @@ In an open session, go back to the list with:
 
 Every other key, ctrl+c included, goes to the harness. The client stays alive in the
 background (●) and repaints when reopened; clients not shown for 15 minutes are
-closed. Opening a session clears the terminal's screen and scrollback first. An unused new chat is cached for reuse ("·ready"),
-and ← on its empty prompt returns to the picker.
+closed. Opening a session clears the terminal's screen and scrollback first. An unused new chat is cached for reuse ("·ready")
+and stays out of the list; `n` reopens the picker on it.
 
 ## Providers
 
