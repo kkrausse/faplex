@@ -18,6 +18,7 @@ export const isLeftInput = (input: string) => isPlainLeft.test(input);
 // ← leaves the session when the cursor sits right after an input prompt with nothing typed before it.
 // A false positive is cheap: the client stays alive and reopening restores it as it was.
 const PROMPT_START = /^\s*[❯›>┃│]?\s*$/;
+const PROMPT_GLYPH = /^\s*[❯›>┃│]\s*$/;
 
 export interface Shadow {
   write(data: Uint8Array): void;
@@ -54,9 +55,13 @@ export function createShadow(cols: number, rows: number): Shadow {
       try {
         lib.embeddedTerminalCompose(handle, buffer.ptr, 0, 0);
         const cursor = lib.embeddedTerminalCursor(handle);
-        if (!cursor.hasValue || !cursor.visible) return false;
+        if (!cursor.hasValue) return false;
         const line = new TextDecoder().decode(buffer.getRealCharBytes(true)).split("\n")[cursor.y] ?? "";
-        return PROMPT_START.test([...line].slice(0, cursor.x).join(""));
+        const before = [...line].slice(0, cursor.x).join("");
+        // Claude Code hides the terminal's cursor in a session it started itself (not in one it
+        // attached to) and draws its own, but still parks the hidden one at the prompt. A hidden
+        // cursor counts only right after a prompt glyph: a blank line could be anything.
+        return (cursor.visible ? PROMPT_START : PROMPT_GLYPH).test(before);
       } finally {
         buffer.destroy();
       }
