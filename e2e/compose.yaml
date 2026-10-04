@@ -3,7 +3,13 @@
 #
 #   docker compose -f e2e/compose.yaml up -d --build --wait     # build, start, seed
 #   e2e/show.sh                                                  # real faplex on `laptop`, list captured with termctrl
+#   e2e/faplex.sh                                                # the same faplex in your own terminal
+#   e2e/x laptop 'curl -sX POST fakeapi:8080/_control/release'   # let the three Working sessions finish
+#   e2e/logs.sh                                                  # seed logs, and which fake API paths were hit or missed
 #   docker compose -f e2e/compose.yaml down -v                   # clean up
+#
+# Seeded state (machine/seed.ts): nine sessions, every harness once in Working, Needs input and
+# Finished. Which state a prompt leads to is decided by fakeapi/scenarios.ts.
 #
 # The network is internal: no container can reach a real API or telemetry endpoint. Everything the
 # machines need is installed at image build time.
@@ -37,15 +43,23 @@ services:
       retries: 30
     stop_grace_period: 1s
 
+  # The machines seed one after another (each waits for the previous one to be healthy), so the
+  # sessions' update times, which order the rows inside a list section, come out the same every run.
   laptop:
     <<: *machine
     hostname: laptop
   devbox:
     <<: *machine
     hostname: devbox
+    depends_on:
+      laptop:
+        condition: service_healthy
   pi:
     <<: *machine
     hostname: pi
+    depends_on:
+      devbox:
+        condition: service_healthy
 
 networks:
   rig:

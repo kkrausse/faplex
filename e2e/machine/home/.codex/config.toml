@@ -3,7 +3,8 @@
 model = "gpt-fake"
 model_provider = "fake"
 check_for_update_on_startup = false
-sandbox_mode = "workspace-write"
+# The container is the sandbox: bubblewrap cannot create namespaces inside an unprivileged container.
+sandbox_mode = "danger-full-access"
 
 [model_providers.fake]
 name = "Fake"

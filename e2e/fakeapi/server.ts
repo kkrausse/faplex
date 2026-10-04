@@ -1,7 +1,6 @@
-// Fake model API for the e2e rig. One server speaks the three wire formats the harnesses use:
-//   Anthropic Messages   POST /v1/messages (+ count_tokens)        Claude Code, OpenCode (anthropic provider)
+// Fake model API for the e2e rig. One server speaks the two wire formats the harnesses use:
+//   Anthropic Messages   POST /v1/messages (+ count_tokens)        Claude Code, and OpenCode through its anthropic provider
 //   OpenAI Responses     POST /v1/responses                        Codex
-//   OpenAI Chat          POST /v1/chat/completions                 OpenCode (openai-compatible provider)
 // Replies come from scenarios.ts, chosen by the prompt text. Every request is logged; paths nothing
 // here handles answer 404 and are listed at GET /_control/unhandled so gaps are visible.
 //
@@ -144,7 +143,7 @@ function anthropicReply(body: ABody, text: string, usage: { input: number }, sto
     if (tool) content.push({ type: "tool_use", id: id("toolu"), name: tool.name, input: tool.input });
     return json({ id: msgId, type: "message", role: "assistant", model, content, stop_reason: stop, stop_sequence: null, usage: { ...usageStart, output_tokens: outTokens(text) } });
   }
-  return sse(async (send, raw) => {
+  return sse(async (send) => {
     send("message_start", { type: "message_start", message: { id: msgId, type: "message", role: "assistant", model, content: [], stop_reason: null, stop_sequence: null, usage: usageStart } });
     send("ping", { type: "ping" });
     let index = 0;
@@ -170,7 +169,6 @@ function anthropicReply(body: ABody, text: string, usage: { input: number }, sto
     }
     send("message_delta", { type: "message_delta", delta: { stop_reason: stop, stop_sequence: null }, usage: { output_tokens: outTokens(full) } });
     send("message_stop", { type: "message_stop" });
-    void raw;
   });
 }
 
@@ -301,53 +299,6 @@ async function openaiResponses(req: Request, path: string) {
   return responsesReply(body, step.text, input);
 }
 
-// ---------------------------------------------------------------- OpenAI Chat Completions
-
-type CMessage = { role: string; content?: string | { type: string; text?: string }[] | null };
-type CBody = { model?: string; stream?: boolean; messages?: CMessage[]; tools?: { function?: { name: string; parameters?: Tool["schema"] } }[] };
-const cText = (c: CMessage["content"]) => (typeof c === "string" ? c : (c ?? []).map((p) => p.text ?? "").join("\n"));
-
-async function openaiChat(req: Request, path: string) {
-  const text = await req.text();
-  const body = JSON.parse(text) as CBody;
-  const messages = body.messages ?? [];
-  let prompt = "", toolResults = 0;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]!;
-    if (m.role === "tool") toolResults++;
-    else if (m.role === "user") {
-      prompt = stripReminders(cText(m.content));
-      break;
-    }
-  }
-  const system = messages.filter((m) => m.role === "system").map((m) => cText(m.content)).join("\n");
-  const turn: Turn = { prompt, toolResults, tools: (body.tools ?? []).map((t) => ({ name: t.function?.name ?? "", schema: t.function?.parameters })), system };
-  const side = sideRequest(turn, false);
-  const { scenario, n, step } = choose(turn);
-  record({ method: "POST", path, wire: "chat", model: body.model, ...(side ? { note: `side:${side.kind}` } : { scenario: scenario.name, step: n, note: `prompt=${JSON.stringify(prompt.slice(0, 60))}` }), handled: true }, text);
-  const cid = id("chatcmpl");
-  const model = body.model ?? "gpt-fake";
-  const say = side ? side.text : "shell" in step ? (step.say ?? "") : "hold" in step ? step.say : step.text;
-  const tool = !side && "shell" in step ? shellTool(turn.tools) : undefined;
-  const toolCalls = tool && "shell" in step ? [{ index: 0, id: id("call"), type: "function", function: { name: tool.name, arguments: JSON.stringify(shellArgs(tool, step.shell)) } }] : undefined;
-  const usage = { prompt_tokens: side ? 120 : (scenario.inputTokens ?? 1000), completion_tokens: outTokens(say), total_tokens: (side ? 120 : (scenario.inputTokens ?? 1000)) + outTokens(say) };
-  if (!body.stream)
-    return json({ id: cid, object: "chat.completion", created: 0, model, choices: [{ index: 0, message: { role: "assistant", content: say, tool_calls: toolCalls }, finish_reason: toolCalls ? "tool_calls" : "stop" }], usage });
-  return sse(async (send, raw) => {
-    const chunk = (delta: unknown, finish: string | null = null, extra: object = {}) => send(undefined, { id: cid, object: "chat.completion.chunk", created: 0, model, choices: [{ index: 0, delta, finish_reason: finish }], ...extra });
-    chunk({ role: "assistant", content: "" });
-    for (const w of words(say)) chunk({ content: w });
-    if (!side && "hold" in step) {
-      await holdWithPings(step.hold, () => raw(": ping\n\n"));
-      for (const w of words(` ${step.text}`)) chunk({ content: w });
-    }
-    if (toolCalls) chunk({ tool_calls: toolCalls });
-    chunk({}, toolCalls ? "tool_calls" : "stop");
-    send(undefined, { id: cid, object: "chat.completion.chunk", created: 0, model, choices: [], usage });
-    send(undefined, "[DONE]");
-  });
-}
-
 // ---------------------------------------------------------------- Models
 
 const ANTHROPIC_MODELS = ["claude-fake-sonnet", "claude-fake-haiku"];
@@ -401,7 +352,6 @@ const server = Bun.serve({
       return json({ input_tokens: Math.ceil(text.length / 4) });
     }
     if (m === "POST" && path === "/v1/responses") return openaiResponses(req, path);
-    if (m === "POST" && path === "/v1/chat/completions") return openaiChat(req, path);
     if (m === "GET" && path === "/v1/models") {
       // Both vendors list models at the same path; the anthropic-version header tells them apart.
       const anthropic = req.headers.has("anthropic-version") || req.headers.has("x-api-key");

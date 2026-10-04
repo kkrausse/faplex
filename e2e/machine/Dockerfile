@@ -47,6 +47,6 @@ RUN ln -s /home/dev/faplex/bin/faplex /home/dev/.local/bin/faplex
 
 # --- harness config, daemons and seed
 COPY --chown=dev:dev e2e/machine/home/ /home/dev/
-COPY e2e/machine/entrypoint.sh e2e/machine/start.sh e2e/machine/seed.ts e2e/machine/codex-list.ts /e2e/
+COPY e2e/machine/entrypoint.sh e2e/machine/start.sh e2e/machine/seed.ts /e2e/
 USER root
 ENTRYPOINT ["tini", "--", "/e2e/entrypoint.sh"]
