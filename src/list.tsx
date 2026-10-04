@@ -1,11 +1,11 @@
-// Session list across machines and harnesses, modeled on paseo-tui's list: 1-cell status gutter,
+// Session list across machines and harnesses, modeled on paseo-tui's list: 1-cell status gutter (plus a cell for what runs behind the row),
 // sections Working → Needs input → Finished → Archived, order within a section frozen while open
 // so live updates change badges (and sections) but never shuffle rows. Working is ordered by when
 // each session started working, so one you just answered lands at its bottom, next to Needs input.
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid";
 import { Index, Show, createEffect, createMemo, createSignal } from "solid-js";
-import type { Session, Status } from "./session.ts";
+import type { Background, Session, Status } from "./session.ts";
 import { isUnprompted } from "./session.ts";
 import { QUIET } from "./errors.ts";
 import type { DashStore } from "./store.ts";
@@ -30,6 +30,10 @@ const GAP = " ";
 
 const sectionOf = (s: Session, archived: boolean): Section =>
   archived ? "archived" : s.status === "needs" ? "needs" : s.status === "working" ? "working" : "finished";
+
+/** The footer's account of the row's `⑂` / `$`. */
+const runningText = (b: Background) =>
+  (b.kind === "agent" ? `⑂ ${b.count} subagent${b.count > 1 ? "s" : ""} running` : `$ ${b.count > 1 ? `${b.count} shells` : "shell"} running`) + (b.label ? `: ${b.label}` : "");
 
 export const label = (s: Pick<Session, "machine" | "harness">) => `${s.machine}·${s.harness}`;
 
@@ -289,14 +293,17 @@ export function SessionList(props: {
               ending() ? colors.error : st() === "needs" ? colors.permission : st() === "failed" ? colors.error : st() === "working" ? colors.selected : colors.muted;
             const gutter = () =>
               stopping(s()) ? spinner() : stopFailed(s()) !== undefined ? "×" : st() === "working" ? spinner() : st() === "needs" ? "!" : st() === "failed" ? "×" : st() === "interrupted" ? "-" : active() ? "❯" : " ";
+            // Next to the gutter: what else is running, whichever section the row is in.
+            const also = () => (s().background?.kind === "agent" ? "⑂" : s().background?.kind === "shell" ? "$" : " ");
             const statusText = () =>
               stopping(s()) ? (s().stoppable ? "stopping…" : "archiving…") : stopFailed(s()) !== undefined ? `still running · stop failed: ${stopFailed(s())}` : st() === "failed" || st() === "interrupted" ? st() : "";
             const row = () => (
               <box height={1} flexShrink={0} flexDirection="row" backgroundColor={active() ? colors.surfaceRaised : colors.bg} onMouseDown={() => setSelected(s().key)}>
-                <box width={1} flexShrink={0}>
+                <box width={2} flexShrink={0} flexDirection="row">
                   <text fg={active() && !ending() && !"needs working failed".includes(st()) ? colors.selected : color()}>{gutter()}</text>
+                  <text fg={color()}>{also()}</text>
                 </box>
-                <box flexDirection="row" flexGrow={1} flexBasis={0} minWidth={0} overflow="hidden" paddingLeft={1}>
+                <box flexDirection="row" flexGrow={1} flexBasis={0} minWidth={0} overflow="hidden">
                   <text wrapMode="none" flexShrink={0} fg={props.store.hostColor(s().machine)}>{host(s())}</text>
                   <text wrapMode="none" flexShrink={0} fg={providerColor(s().harness)}>{`·${harnessShort(s().harness)}`.padEnd(labelWidth() - host(s()).length)}</text>
                   <text wrapMode="none" flexShrink={0} fg={active() ? colors.selected : s().open ? colors.text : colors.muted} attributes={active() ? TextAttributes.BOLD : undefined}>
@@ -340,6 +347,7 @@ export function SessionList(props: {
         </text>
         <text height={1} wrapMode="none" fg={colors.text}>{[
           current()?.detail.split("\n")[0],
+          current()?.background && runningText(current()!.background!),
           current()?.context && `${current()!.context!.usedTokens.toLocaleString()}${current()!.context!.limitTokens ? ` / ${current()!.context!.limitTokens!.toLocaleString()}` : ""} context tokens · last response ${relTime(current()!.context!.measuredAt)}`,
         ].filter(Boolean).join(" · ")}</text>
         <text height={1} wrapMode="none" fg={colors.dim}>

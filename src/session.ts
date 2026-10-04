@@ -7,6 +7,8 @@ export type Status = "needs" | "working" | "done" | "failed" | "interrupted" | "
 /** A latest-response snapshot, not cumulative billed usage. Missing fields mean unavailable. */
 export type ContextUsage = { usedTokens: number; limitTokens?: number; measuredAt: number };
 export type Subagents = { total: number; active: number; complete: boolean };
+/** What is running besides the top level's own turn: subagents if any, else shells. `label` names the first. */
+export type Background = { kind: "agent" | "shell"; count: number; label: string };
 
 export type Session = {
   machine: string;
@@ -24,6 +26,8 @@ export type Session = {
   /** Whether a prompt has been sent. Unknown is not treated as an empty draft. */
   prompted?: boolean;
   subagents?: Subagents;
+  /** Absent when nothing is, or when the harness doesn't say. Independent of `status`. */
+  background?: Background;
   context?: ContextUsage;
   detail: string;
   updatedAt: number;

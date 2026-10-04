@@ -96,7 +96,9 @@ All ssh traffic to a host shares one connection (ControlMaster sockets in
 Sections: **Working**, **Needs input**, **Finished** (done, failed, interrupted, idle) and
 **Archived** (collapsed; tab shows it). Each row is `machine·harness`, title, status line, then
 **subs** (active/total subagents), **tok** (tokens in the context window) and **age** (time
-since the last update). A session is archived when its harness archived it, you archived it
+since the last update). A `⑂` or `$` after the status mark means subagents or a shell are still
+running behind the row (Claude only so far): a question asked with a dev server up is still
+Needs input, and a finished turn with one left running is still Finished. A session is archived when its harness archived it, you archived it
 here, or it has been finished and untouched for 7 days. Archiving here is not final: opening
 the session, or anything happening in it afterwards, brings it back. Unprompted drafts are hidden.
 
