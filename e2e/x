@@ -1,0 +1,5 @@
+#!/bin/sh
+# Run a command as `dev` on a rig machine: e2e/x <machine> <shell command...>
+here=$(cd "$(dirname "$0")" && pwd)
+m=$1; shift
+exec docker compose -f "$here/compose.yaml" exec -T -u dev "$m" sh -c "$*"

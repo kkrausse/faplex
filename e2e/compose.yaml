@@ -1,0 +1,52 @@
+# faplex end-to-end rig: three "machines" that ssh to each other, each with the real Claude Code,
+# Codex and OpenCode at pinned versions, all pointed at a fake model API.
+#
+#   docker compose -f e2e/compose.yaml up -d --build --wait     # build, start, seed
+#   e2e/show.sh                                                  # real faplex on `laptop`, list captured with termctrl
+#   docker compose -f e2e/compose.yaml down -v                   # clean up
+#
+# The network is internal: no container can reach a real API or telemetry endpoint. Everything the
+# machines need is installed at image build time.
+name: faplex-e2e
+
+x-machine: &machine
+  image: faplex-e2e-machine
+  build:
+    context: ..
+    dockerfile: e2e/machine/Dockerfile
+  networks: [rig]
+  depends_on:
+    fakeapi:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "test", "-f", "/home/dev/.e2e-seeded"]
+    interval: 2s
+    timeout: 2s
+    retries: 90
+  stop_grace_period: 2s
+
+services:
+  fakeapi:
+    build: ./fakeapi
+    image: faplex-e2e-fakeapi
+    networks: [rig]
+    healthcheck:
+      test: ["CMD", "bun", "-e", "await fetch('http://127.0.0.1:8080/health').then(r => process.exit(r.ok ? 0 : 1))"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+    stop_grace_period: 1s
+
+  laptop:
+    <<: *machine
+    hostname: laptop
+  devbox:
+    <<: *machine
+    hostname: devbox
+  pi:
+    <<: *machine
+    hostname: pi
+
+networks:
+  rig:
+    internal: true

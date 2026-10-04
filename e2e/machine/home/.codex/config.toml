@@ -1,0 +1,23 @@
+# Codex pointed at the fake API: a custom provider speaking the Responses wire format, with the
+# dummy key inline so nothing depends on environment variables (ssh sessions don't carry them).
+model = "gpt-fake"
+model_provider = "fake"
+check_for_update_on_startup = false
+sandbox_mode = "workspace-write"
+
+[model_providers.fake]
+name = "Fake"
+base_url = "http://fakeapi:8080/v1"
+wire_api = "responses"
+experimental_bearer_token = "sk-e2e-dummy-key-not-real"
+requires_openai_auth = false
+
+[analytics]
+enabled = false
+
+[projects."/home/dev/src/shop-api"]
+trust_level = "trusted"
+[projects."/home/dev/src/infra"]
+trust_level = "trusted"
+[projects."/home/dev/src/site"]
+trust_level = "trusted"

@@ -1,0 +1,9 @@
+**
+!package.json
+!bun.lock
+!bunfig.toml
+!tsconfig.json
+!src
+!bin
+!scripts
+!e2e/machine

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "fake/claude-fake-sonnet",
+  "small_model": "fake/claude-fake-haiku",
+  "autoupdate": false,
+  "share": "disabled",
+  "permission": { "shell": "ask" },
+  "provider": {
+    "fake": {
+      "npm": "@ai-sdk/anthropic",
+      "name": "Fake",
+      "options": { "baseURL": "http://fakeapi:8080/v1", "apiKey": "sk-e2e-dummy-key-not-real" },
+      "models": {
+        "claude-fake-sonnet": { "name": "Fake Sonnet", "limit": { "context": 200000, "output": 8192 } },
+        "claude-fake-haiku": { "name": "Fake Haiku", "limit": { "context": 200000, "output": 8192 } }
+      }
+    }
+  }
+}
