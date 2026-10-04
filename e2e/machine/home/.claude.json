@@ -5,6 +5,8 @@
   "projects": {
     "/home/dev/src/shop-api": { "hasTrustDialogAccepted": true, "hasCompletedProjectOnboarding": true },
     "/home/dev/src/infra": { "hasTrustDialogAccepted": true, "hasCompletedProjectOnboarding": true },
-    "/home/dev/src/site": { "hasTrustDialogAccepted": true, "hasCompletedProjectOnboarding": true }
+    "/home/dev/src/site": { "hasTrustDialogAccepted": true, "hasCompletedProjectOnboarding": true },
+    "/home/dev/src": { "hasTrustDialogAccepted": true, "hasCompletedProjectOnboarding": true },
+    "/home/dev": { "hasTrustDialogAccepted": true, "hasCompletedProjectOnboarding": true }
   }
 }

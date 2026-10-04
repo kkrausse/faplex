@@ -29,18 +29,21 @@ const record = (e: Omit<Entry, "n" | "at">, body?: string): Entry => {
 type Held = { key: string; release: () => void };
 const held = new Set<Held>();
 let heldWaiters: Array<() => void> = [];
-const hold = (key: string): Promise<void> =>
+const hold = (key: string, gone: AbortSignal): Promise<void> =>
   new Promise((resolve) => {
     const h: Held = { key, release: () => (held.delete(h), resolve()) };
     held.add(h);
+    // The harness dropped the request (an interrupt, a stop): nothing is waiting on it any more.
+    gone.addEventListener("abort", h.release, { once: true });
     const waiters = heldWaiters;
     heldWaiters = [];
     for (const w of waiters) w();
   });
 
 const json = (value: unknown, status = 200) => Response.json(value, { status });
-const sse = (run: (send: (event: string | undefined, data: unknown) => void, raw: (line: string) => void) => Promise<void>) => {
+const sse = (run: (send: (event: string | undefined, data: unknown) => void, raw: (line: string) => void, gone: AbortSignal) => Promise<void>) => {
   const enc = new TextEncoder();
+  const gone = new AbortController();
   return new Response(
     new ReadableStream({
       async start(controller) {
@@ -51,12 +54,15 @@ const sse = (run: (send: (event: string | undefined, data: unknown) => void, raw
         };
         const send = (event: string | undefined, data: unknown) => raw(`${event ? `event: ${event}\n` : ""}data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`);
         try {
-          await run(send, raw);
+          await run(send, raw, gone.signal);
         } finally {
           try {
             controller.close();
           } catch {}
         }
+      },
+      cancel() {
+        gone.abort();
       },
     }),
     { headers: { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" } },
@@ -64,10 +70,10 @@ const sse = (run: (send: (event: string | undefined, data: unknown) => void, raw
 };
 
 /** While a stream is held, a comment line every few seconds keeps clients and proxies from timing out. */
-const holdWithPings = async (key: string, ping: () => void) => {
+const holdWithPings = async (key: string, ping: () => void, gone: AbortSignal) => {
   const timer = setInterval(ping, 5000);
   try {
-    await hold(key);
+    await hold(key, gone);
   } finally {
     clearInterval(timer);
   }
@@ -91,7 +97,8 @@ const choose = (turn: Turn): { scenario: Scenario; n: number; step: Step } => {
 const titleOf = (prompt: string) => {
   const line = prompt.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, " ").trim().split("\n").find((l) => l.trim()) ?? "Session";
   const t = line.trim().replace(/[.?!]+$/, "");
-  return t.length > 48 ? t.slice(0, 48).trim() : t;
+  const cut = t.length > 48 ? t.slice(0, 48).trim() : t;
+  return cut.charAt(0).toUpperCase() + cut.slice(1);
 };
 
 // ---------------------------------------------------------------- Anthropic Messages
@@ -127,14 +134,14 @@ const shellTool = (tools: Tool[]) => SHELL_TOOLS.map((n) => tools.find((t) => t.
  * The shell tool's arguments, shaped by the schema the harness sent: Claude's Bash and OpenCode's
  * shell take `command` as a string, Codex's exec_command takes `cmd`, its older shell an argv array.
  */
-const shellArgs = (tool: Tool, command: string): Record<string, unknown> => {
+const shellArgs = (tool: Tool, command: string, why = "Run a shell command"): Record<string, unknown> => {
   const props = tool.schema?.properties ?? {};
   if (props.cmd) return { cmd: command };
   if (props.command?.type === "array") return { command: ["bash", "-lc", command] };
-  return { command, ...(props.description ? { description: "Reset the build directory" } : {}) };
+  return { command, ...(props.description ? { description: why } : {}) };
 };
 
-function anthropicReply(body: ABody, text: string, usage: { input: number }, stop: "end_turn" | "tool_use", tool?: { name: string; input: unknown }, holdKey?: { key: string; then: string }) {
+function anthropicReply(body: ABody, text: string, usage: { input: number }, stop: "end_turn" | "tool_use", tool?: { name: string; input: unknown }, holdKey?: { key: string; then?: string }) {
   const model = body.model ?? "claude-fake";
   const msgId = id("msg");
   const usageStart = { input_tokens: usage.input, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
@@ -143,7 +150,7 @@ function anthropicReply(body: ABody, text: string, usage: { input: number }, sto
     if (tool) content.push({ type: "tool_use", id: id("toolu"), name: tool.name, input: tool.input });
     return json({ id: msgId, type: "message", role: "assistant", model, content, stop_reason: stop, stop_sequence: null, usage: { ...usageStart, output_tokens: outTokens(text) } });
   }
-  return sse(async (send) => {
+  return sse(async (send, _raw, gone) => {
     send("message_start", { type: "message_start", message: { id: msgId, type: "message", role: "assistant", model, content: [], stop_reason: null, stop_sequence: null, usage: usageStart } });
     send("ping", { type: "ping" });
     let index = 0;
@@ -156,9 +163,11 @@ function anthropicReply(body: ABody, text: string, usage: { input: number }, sto
     if (text) {
       const stopBlock = await textBlock(text);
       if (holdKey) {
-        await holdWithPings(holdKey.key, () => send("ping", { type: "ping" }));
-        for (const w of words(` ${holdKey.then}`)) send("content_block_delta", { type: "content_block_delta", index, delta: { type: "text_delta", text: w } });
-        full += ` ${holdKey.then}`;
+        await holdWithPings(holdKey.key, () => send("ping", { type: "ping" }), gone);
+        if (gone.aborted) return;
+        const rest = holdKey.then ? ` ${holdKey.then}` : "";
+        if (rest) for (const w of words(rest)) send("content_block_delta", { type: "content_block_delta", index, delta: { type: "text_delta", text: w } });
+        full += rest;
       }
       stopBlock();
     }
@@ -192,7 +201,7 @@ async function anthropicMessages(req: Request, path: string) {
   if ("shell" in step) {
     const tool = shellTool(turn.tools);
     if (!tool) return anthropicReply(body, `(no shell tool offered; wanted to run: ${step.shell})`, usage, "end_turn");
-    return anthropicReply(body, step.say ?? "", usage, "tool_use", { name: tool.name, input: shellArgs(tool, step.shell) });
+    return anthropicReply(body, step.say ?? "", usage, "tool_use", { name: tool.name, input: shellArgs(tool, step.shell, step.why) });
   }
   if ("hold" in step) return anthropicReply(body, step.say, usage, "end_turn", undefined, { key: step.hold, then: step.text });
   return anthropicReply(body, step.text, usage, "end_turn");
@@ -204,6 +213,13 @@ function sideRequest(turn: Turn, wantsJson: boolean): { kind: string; text: stri
   if (turn.tools.length) return undefined;
   const { system, prompt } = turn;
   const s = system.toLowerCase();
+  // Codex names a thread from its first prompt: the instruction and the prompt arrive together as
+  // the user message, and the answer must be JSON with a title of at most 36 characters.
+  const codexTitle = prompt.match(/^Generate a concise, single-line task title[\s\S]*?User prompt:\n([\s\S]*)$/);
+  if (codexTitle) {
+    const t = titleOf(codexTitle[1]!).slice(0, 36).trim();
+    return { kind: "title", text: JSON.stringify({ title: t }) };
+  }
   // Claude Code's background-job classifier: after a turn it asks which state the job is in and
   // for the one-line status that `claude agents` (and faplex's status column) shows.
   if (/decide which of four states/.test(s)) {
@@ -243,11 +259,11 @@ function responsesTurn(body: RBody): Turn {
   return { prompt, toolResults, tools: (body.tools ?? []).map((t) => ({ name: t.name ?? t.type, schema: t.parameters })), system: body.instructions ?? "" };
 }
 
-function responsesReply(body: RBody, text: string, inputTokens: number, tool?: { name: string; args: unknown }, holdKey?: { key: string; then: string }) {
+function responsesReply(body: RBody, text: string, inputTokens: number, tool?: { name: string; args: unknown }, holdKey?: { key: string; then?: string }) {
   const respId = id("resp");
   const model = body.model ?? "gpt-fake";
   const base = { id: respId, object: "response", created_at: Math.floor(Date.now() / 1000), model, status: "in_progress", output: [] as unknown[] };
-  return sse(async (send, raw) => {
+  return sse(async (send, raw, gone) => {
     send("response.created", { type: "response.created", response: base });
     send("response.in_progress", { type: "response.in_progress", response: base });
     const output: unknown[] = [];
@@ -259,9 +275,11 @@ function responsesReply(body: RBody, text: string, inputTokens: number, tool?: {
       send("response.content_part.added", { type: "response.content_part.added", item_id: itemId, output_index: i, content_index: 0, part: { type: "output_text", text: "", annotations: [] } });
       for (const w of words(text)) send("response.output_text.delta", { type: "response.output_text.delta", item_id: itemId, output_index: i, content_index: 0, delta: w });
       if (holdKey) {
-        await holdWithPings(holdKey.key, () => raw(": ping\n\n"));
-        for (const w of words(` ${holdKey.then}`)) send("response.output_text.delta", { type: "response.output_text.delta", item_id: itemId, output_index: i, content_index: 0, delta: w });
-        full += ` ${holdKey.then}`;
+        await holdWithPings(holdKey.key, () => raw(": ping\n\n"), gone);
+        if (gone.aborted) return;
+        const rest = holdKey.then ? ` ${holdKey.then}` : "";
+        if (rest) for (const w of words(rest)) send("response.output_text.delta", { type: "response.output_text.delta", item_id: itemId, output_index: i, content_index: 0, delta: w });
+        full += rest;
       }
       send("response.output_text.done", { type: "response.output_text.done", item_id: itemId, output_index: i, content_index: 0, text: full });
       const item = { type: "message", id: itemId, role: "assistant", status: "completed", content: [{ type: "output_text", text: full, annotations: [] }] };
@@ -297,7 +315,7 @@ async function openaiResponses(req: Request, path: string) {
   if ("shell" in step) {
     const tool = shellTool(turn.tools);
     if (!tool) return responsesReply(body, `(no shell tool offered; wanted to run: ${step.shell})`, input);
-    return responsesReply(body, step.say ?? "", input, { name: tool.name, args: shellArgs(tool, step.shell) });
+    return responsesReply(body, step.say ?? "", input, { name: tool.name, args: shellArgs(tool, step.shell, step.why) });
   }
   if ("hold" in step) return responsesReply(body, step.say, input, undefined, { key: step.hold, then: step.text });
   return responsesReply(body, step.text, input);
@@ -306,7 +324,7 @@ async function openaiResponses(req: Request, path: string) {
 // ---------------------------------------------------------------- Models
 
 const ANTHROPIC_MODELS = ["claude-fake-sonnet", "claude-fake-haiku"];
-const OPENAI_MODELS = ["gpt-fake"];
+const OPENAI_MODELS = ["gpt-6.1-sol"];
 
 // ---------------------------------------------------------------- Router
 

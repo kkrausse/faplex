@@ -4,12 +4,12 @@
 #   docker compose -f e2e/compose.yaml up -d --build --wait     # build, start, seed
 #   e2e/show.sh                                                  # real faplex on `laptop`, list captured with termctrl
 #   e2e/faplex.sh                                                # the same faplex in your own terminal
-#   e2e/x laptop 'curl -sX POST fakeapi:8080/_control/release'   # let the Working sessions finish (?key=flaky for one)
+#   e2e/x laptop 'curl -sX POST fakeapi:8080/_control/release'   # let the Working sessions finish (?key=migrate for one)
 #   e2e/logs.sh                                                  # seed logs, and which fake API paths were hit or missed
 #   e2e/record.sh                                                # fresh rig -> scripted recording -> e2e/out/demo.gif -> teardown
 #   docker compose -f e2e/compose.yaml down -v                   # clean up
 #
-# Seeded state (machine/seed.ts): nine sessions, every harness once in Working, Needs input and
+# Seeded state (machine/seed.ts): three sessions, one per machine: one Working, one Needs input, one
 # Finished. Which state a prompt leads to is decided by fakeapi/scenarios.ts.
 #
 # The network is internal: no container can reach a real API or telemetry endpoint. Everything the

@@ -9,6 +9,7 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 out="$here/out"; rec="$out/demo.termctrl"; mp4="$out/demo.mp4"; gif="$out/demo.gif"; edit="$out/edit.json"
 COLS=${COLS:-120}; ROWS=${ROWS:-30}; FPS=${FPS:-10}; WIDTH=${WIDTH:-1116}
+PACE=${PACE:-22}   # ms per typed character
 export TERMCTRL_RUNTIME_DIR=/tmp/tc-faplex-e2e-rec
 mkdir -p "$out"; mkdir -p -m 700 "$TERMCTRL_RUNTIME_DIR"
 rm -f "$rec" "$mp4" "$gif"
@@ -27,88 +28,117 @@ key() { termctrl send $s "$@"; }
 back() { printf '\035' | termctrl send $s --stdin; }   # ctrl+]
 see() { termctrl wait $s "$1" --timeout "${2:-30000}"; }
 mark() { termctrl mark $s "$1"; }
-release() { "$here/x" laptop "curl -fsS -X POST 'fakeapi:8080/_control/release?key=$1'" >/dev/null; }
 
 termctrl start $s --host opentui --cols "$COLS" --rows "$ROWS" --record "$rec" -- "$here/faplex.sh"
-see "Document the backup script"; see "Bump the terraform provider"; see "Tidy the landing page copy"
-see "Working 3"; see "Needs input 3"; see "Finished 3"
+see "Migrate cron jobs to systemd timers"; see "Clean up stale build artifacts"; see "Bump lodash to 4.17.21"
+see "Working 1"; see "Needs input 1"; see "Finished 1"
 sleep 0.5
 
-# 1. The seeded list; move down it.
+# The starting list: one session per machine.
 mark list
-sleep 1.8
-mark down
-key down; sleep 0.6; key down; sleep 1.2
+sleep 0.9
 
-# 2. One held model stream is released, so one Working session finishes while we watch.
-mark finish
-release flaky
-see "Finished 4"
-see "flaky test fixed"
-sleep 2.2
-
-# 3. A session that needs input: open it, approve in the harness's own UI, come back.
-mark toneeds
-key down; sleep 1.4
-mark open
-key right
-see "Do you want to proceed?"
-sleep 2.4          # also lets the dialog settle; a key sent the instant a prompt renders can be dropped
-mark approve
-key text:1
-see "The stale files are gone"
-sleep 2
+# 1. A new Codex session on laptop; once prompted it is a Working row.
+mark n1
+key text:n; see "New session"
+sleep 0.35; key right; sleep 0.25; key right; sleep 0.4
+key enter
+see "Ask Codex"
+sleep 0.3
+mark type1
+key --pace-ms "$PACE" "text:make a cool demo of this project"
+sleep 0.25
+key enter
+see "narrated video"
+sleep 0.7
 mark back1
 back
-see "Needs input 2"
-sleep 2.2
+see "Working 2"; see "Make a cool demo of this project"
+sleep 0.6
 
-# 4. A new OpenCode session on devbox; once prompted it is a Working row.
-mark new
-key text:n
-see "New session"
-sleep 1
-mark pick
-key down; sleep 0.6; key right; sleep 1
-mark create
+# 2. A new OpenCode session on devbox, on the (mocked) DeepSeek 4.1 model.
+mark n2
+key text:n; see "New session"
+sleep 0.35; key down; sleep 0.25; key right; sleep 0.4
 key enter
-see "Ask anything"
-sleep 1
-mark prompt
-key --pace-ms 55 "text:add a /healthz endpoint with a test"
+see "Ask anything"; see "DeepSeek 4.1"
 sleep 0.5
+mark type2
+key --pace-ms "$PACE" "text:write release notes for v0.2"
+sleep 0.25
 key enter
-see "Planning the change"
-sleep 1.6
+see "Collecting the commits"
+sleep 0.7
 mark back2
 back
+see "Working 3"; see "Write release notes for v0.2"
+sleep 0.6
+
+# 3. The Claude session that needs input: open it, answer in Claude Code's own prompt, come back.
+mark open3
+key down; sleep 0.5
+key right
+see "Do you want to proceed?"
+sleep 1.2          # reading time, and lets the dialog settle: a key sent the instant a prompt renders can be dropped
+mark approve
+key text:1
+see "build/ deleted and recreated"
+sleep 0.9
+mark back3
+back
+see "Finished 2"
+see "build/ cleared and recreated"
+sleep 0.9
+
+# 4. Steer the Codex session while it is still working. Codex holds a message typed mid-turn
+#    until the next tool call; esc interrupts the model and sends it at once.
+mark open4
+key up; sleep 0.25; key up; sleep 0.4
+key right
+see "narrated video"
+sleep 0.6
+mark steer
+key --pace-ms "$PACE" "text:keep it under 20 seconds and make it a GIF"
+sleep 0.25
+key enter
+see "Messages to be submitted"
+sleep 0.9
+mark esc
+key escape
+see "Got it: a GIF"
+sleep 1.1
+mark back4
+back
 see "Working 3"
-see "add a /healthz endpoint"
-sleep 2.6
+sleep 1.1
 mark end
 
 key text:q
 sleep 1
 termctrl stop $s >/dev/null 2>&1 || true
 
-# One clip per step; the caption names the keys pressed in it (or says that none were).
+# One clip per step; the caption names the keys pressed in it. The one stretch with nothing to
+# read (Claude's status line takes a moment to arrive after the turn) is sped up; harness startup
+# and ssh connects are already under a second on the rig.
 cat > "$edit" <<'EOF'
 {"clips":[
-  {"from":"list","to":"down","caption":"faplex · 3 machines over ssh · Claude Code, Codex, OpenCode"},
-  {"from":"down","to":"finish","caption":"↓ ↓"},
-  {"from":"finish","to":"toneeds","caption":"(no key) a session finishes on its own"},
-  {"from":"toneeds","to":"open","caption":"↓"},
-  {"from":"open","to":"approve","caption":"→ open · claude attach on pi"},
-  {"from":"approve","to":"back1","caption":"1 · approve in Claude Code's own prompt"},
-  {"from":"back1","to":"new","caption":"ctrl+] back"},
-  {"from":"new","to":"pick","caption":"n new session"},
-  {"from":"pick","to":"create","caption":"↓ → · devbox, opencode"},
-  {"from":"create","to":"prompt","caption":"⏎ open"},
-  {"from":"prompt","to":"back2","caption":"type a prompt · ⏎"},
-  {"from":"back2","to":"end","caption":"ctrl+] back"}
+  {"from":"list","to":"n1","caption":"faplex · agent sessions on 3 machines, over ssh"},
+  {"from":"n1","to":"type1","caption":"n new session · → → codex on laptop · ⏎"},
+  {"from":"type1","to":"back1","caption":"type a prompt · ⏎"},
+  {"from":"back1","to":"n2","caption":"ctrl+] back"},
+  {"from":"n2","to":"type2","caption":"n new session · ↓ → opencode on devbox · ⏎"},
+  {"from":"type2","to":"back2","caption":"type a prompt · ⏎"},
+  {"from":"back2","to":"open3","caption":"ctrl+] back"},
+  {"from":"open3","to":"approve","caption":"↓ · → open the session that needs input"},
+  {"from":"approve","to":"back3","caption":"1 · approve in Claude Code's own prompt"},
+  {"from":"back3","to":"open4","caption":"ctrl+] back","speed":1.6},
+  {"from":"open4","to":"steer","caption":"↑ ↑ · → open the working Codex session"},
+  {"from":"steer","to":"esc","caption":"type a follow-up · ⏎"},
+  {"from":"esc","to":"back4","caption":"esc · interrupt and send it now"},
+  {"from":"back4","to":"end","caption":"ctrl+] back"}
 ]}
 EOF
-termctrl video "$rec" --edit "$edit" --pixel-ratio 1 --fps "$FPS" --font-family "${FONT:-DejaVu Sans Mono}" --tail-ms 1500 --out "$mp4"
+termctrl video "$rec" --edit "$edit" --pixel-ratio 1 --fps "$FPS" --font-family "${FONT:-DejaVu Sans Mono}" --tail-ms 1000 --out "$mp4"
 ffmpeg -v error -y -i "$mp4" -filter_complex \
   "fps=$FPS,scale=$WIDTH:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=${COLORS:-128}:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" \
   -loop 0 "$gif"

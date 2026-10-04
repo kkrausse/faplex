@@ -14,26 +14,14 @@ type Seed = { harness: Harness; dir: string; title: string; prompt: string; expe
 const HOME = homedir();
 const TIMEOUT_MS = 60_000;
 
-// The fake API decides where a prompt ends up: "dependency audit" / "flaky checkout" / "migrate … to" / "healthz"
-// hold the stream open (Working), "rate limit" / "clean up" / "drop the" ask to run a shell command
-// (Needs input), anything else is answered (Finished). `expect` is what the seed waits for.
-// Every harness appears once in every state.
+// A sparse starting list, one session per machine: something working, something waiting on a
+// permission question, something finished. The prompt decides which (e2e/fakeapi/scenarios.ts):
+// "migrate the cron jobs" is held open, "stale build artifacts" asks to run a shell command,
+// "lodash" is answered. `expect` is the state the seed waits for.
 const PLAN: Record<string, Seed[]> = {
-  laptop: [
-    { harness: "claude", dir: "~/src/shop-api", title: "Fix flaky checkout test", prompt: "fix the flaky checkout test", expect: "working" },
-    { harness: "codex", dir: "~/src/shop-api", title: "Add rate limiting to public API", prompt: "add rate limiting to the public API", expect: "needs" },
-    { harness: "opencode", dir: "~/src/site", title: "Tidy the landing page copy", prompt: "tidy the landing page copy", expect: "done", id: "ses_tidy_landing_page" },
-  ],
-  devbox: [
-    { harness: "codex", dir: "~/src/infra", title: "Nightly dependency audit", prompt: "run the nightly dependency audit", expect: "working" },
-    { harness: "opencode", dir: "~/src/infra", title: "Drop the staging tables", prompt: "drop the staging tables", expect: "needs", id: "ses_drop_staging_tables" },
-    { harness: "claude", dir: "~/src/infra", title: "Bump the terraform provider", prompt: "bump the terraform provider", expect: "done" },
-  ],
-  pi: [
-    { harness: "opencode", dir: "~/src/site", title: "Migrate cron jobs to systemd timers", prompt: "migrate the cron jobs to systemd timers", expect: "working", id: "ses_migrate_cron_jobs" },
-    { harness: "claude", dir: "~/src/site", title: "Clean up stale nginx configs", prompt: "clean up the stale nginx configs", expect: "needs" },
-    { harness: "codex", dir: "~/src/site", title: "Document the backup script", prompt: "document the backup script", expect: "done" },
-  ],
+  laptop: [{ harness: "claude", dir: "~/src/shop-api", title: "Bump lodash to 4.17.21", prompt: "bump lodash to 4.17.21", expect: "done" }],
+  devbox: [{ harness: "claude", dir: "~/src/shop-api", title: "Clean up stale build artifacts", prompt: "clean up the stale build artifacts", expect: "needs" }],
+  pi: [{ harness: "opencode", dir: "~/src/site", title: "Migrate cron jobs to systemd timers", prompt: "migrate the cron jobs to systemd timers", expect: "working", id: "ses_migrate_cron_jobs" }],
 };
 
 const expand = (p: string) => (p.startsWith("~/") ? HOME + p.slice(1) : p);

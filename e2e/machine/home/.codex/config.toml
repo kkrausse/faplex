@@ -1,6 +1,7 @@
 # Codex pointed at the fake API: a custom provider speaking the Responses wire format, with the
 # dummy key inline so nothing depends on environment variables (ssh sessions don't carry them).
-model = "gpt-fake"
+# A model Codex has metadata for (an unknown one shows a warning badge in its UI); the fake API answers for it.
+model = "gpt-6.1-sol"
 model_provider = "fake"
 check_for_update_on_startup = false
 # The container is the sandbox: bubblewrap cannot create namespaces inside an unprivileged container.
