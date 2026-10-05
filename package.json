@@ -22,6 +22,7 @@
     "check": "tsc --noEmit",
     "build": "bun scripts/build.ts bin",
     "build:npm": "bun scripts/build.ts npm",
+    "release": "bun scripts/release.ts",
     "prepublishOnly": "bun run check && bun run build:npm"
   },
   "dependencies": {
