@@ -59,7 +59,7 @@ export function SessionList(props: {
   const [selected, setSelected] = createSignal(props.initialSelected ?? "");
   const [filter, setFilter] = createSignal("");
   const [filtering, setFiltering] = createSignal(false);
-  const [showArchived, setShowArchived] = createSignal(false);
+  const [showArchived, setShowArchived] = createSignal(true);
   const [flash, setFlashRaw] = createSignal(props.flash ?? "");
   let flashTimer: ReturnType<typeof setTimeout> | undefined;
   const setFlash = (m: string) => {
@@ -289,8 +289,9 @@ export function SessionList(props: {
             const st = (): Status => s().status;
             // Red while its stop is running, and for as long as a failed stop leaves it running.
             const ending = () => stopping(s()) || stopFailed(s()) !== undefined;
+            const archived = () => archivedOf(s());
             const color = () =>
-              ending() ? colors.error : st() === "needs" ? colors.permission : st() === "failed" ? colors.error : st() === "working" ? colors.selected : colors.muted;
+              ending() ? colors.error : archived() ? colors.dim : st() === "needs" ? colors.permission : st() === "failed" ? colors.error : st() === "working" ? colors.selected : colors.muted;
             const gutter = () =>
               stopping(s()) ? spinner() : stopFailed(s()) !== undefined ? "×" : st() === "working" ? spinner() : st() === "needs" ? "!" : st() === "failed" ? "×" : st() === "interrupted" ? "-" : active() ? "❯" : " ";
             // Next to the gutter: what else is running, whichever section the row is in.
@@ -300,28 +301,28 @@ export function SessionList(props: {
             const row = () => (
               <box height={1} flexShrink={0} flexDirection="row" backgroundColor={active() ? colors.surfaceRaised : colors.bg} onMouseDown={() => setSelected(s().key)}>
                 <box width={2} flexShrink={0} flexDirection="row">
-                  <text fg={active() && !ending() && !"needs working failed".includes(st()) ? colors.selected : color()}>{gutter()}</text>
+                  <text fg={active() && !ending() && !archived() && !"needs working failed".includes(st()) ? colors.selected : color()}>{gutter()}</text>
                   <text fg={color()}>{also()}</text>
                 </box>
                 <box flexDirection="row" flexGrow={1} flexBasis={0} minWidth={0} overflow="hidden">
-                  <text wrapMode="none" flexShrink={0} fg={props.store.hostColor(s().machine)}>{host(s())}</text>
-                  <text wrapMode="none" flexShrink={0} fg={providerColor(s().harness)}>{`·${harnessShort(s().harness)}`.padEnd(labelWidth() - host(s()).length)}</text>
-                  <text wrapMode="none" flexShrink={0} fg={active() ? colors.selected : s().open ? colors.text : colors.muted} attributes={active() ? TextAttributes.BOLD : undefined}>
+                  <text wrapMode="none" flexShrink={0} fg={archived() ? colors.dim : props.store.hostColor(s().machine)}>{host(s())}</text>
+                  <text wrapMode="none" flexShrink={0} fg={archived() ? colors.dim : providerColor(s().harness)}>{`·${harnessShort(s().harness)}`.padEnd(labelWidth() - host(s()).length)}</text>
+                  <text wrapMode="none" flexShrink={0} fg={archived() ? colors.dim : active() ? colors.selected : s().open ? colors.text : colors.muted} attributes={active() ? TextAttributes.BOLD : undefined}>
                     {fit(s().title, cols().title)}
                   </text>
                   <text wrapMode="none" flexShrink={1} fg={color()}>{GAP + (ending() ? statusText() : s().detail || statusText()).split("\n")[0]}</text>
                 </box>
                 {/* An empty text still takes a column, so an absent column renders nothing at all. */}
                 <Show when={cols().subagents}>
-                  <text wrapMode="none" flexShrink={0} fg={s().subagents?.active ? colors.selected : colors.muted}>{cell(subagentCell(s().subagents), cols().subagents, true)}</text>
+                  <text wrapMode="none" flexShrink={0} fg={archived() ? colors.dim : s().subagents?.active ? colors.selected : colors.muted}>{cell(subagentCell(s().subagents), cols().subagents, true)}</text>
                 </Show>
                 <Show when={cols().context}>
-                  <text wrapMode="none" flexShrink={0} fg={colors.muted}>{cell(contextCell(s().context), cols().context, true)}</text>
+                  <text wrapMode="none" flexShrink={0} fg={archived() ? colors.dim : colors.muted}>{cell(contextCell(s().context), cols().context, true)}</text>
                 </Show>
                 <Show when={cols().state}>
-                  <text wrapMode="none" flexShrink={0} fg={props.live().has(s().key) ? colors.success : colors.dim}>{cell(stateCell(s()), cols().state)}</text>
+                  <text wrapMode="none" flexShrink={0} fg={archived() ? colors.dim : props.live().has(s().key) ? colors.success : colors.dim}>{cell(stateCell(s()), cols().state)}</text>
                 </Show>
-                <text wrapMode="none" flexShrink={0} fg={colors.muted}>{cell(age(s().updatedAt), AGE_W, true)}</text>
+                <text wrapMode="none" flexShrink={0} fg={archived() ? colors.dim : colors.muted}>{cell(age(s().updatedAt), AGE_W, true)}</text>
               </box>
             );
             // Index reuses slots by position, so a slot can switch between header and row.
@@ -329,7 +330,7 @@ export function SessionList(props: {
               <Show when={header()} keyed fallback={row()}>
                 {(h) => (
                   <box height={HEADER_H} flexShrink={0} border={["top"]} borderColor={colors.border} flexDirection="row">
-                    <text fg={h.header === "needs" ? colors.permission : colors.text} attributes={TextAttributes.BOLD}>{SECTIONS.find((x) => x.id === h.header)!.label}</text>
+                    <text fg={h.header === "archived" ? colors.dim : h.header === "needs" ? colors.permission : colors.text} attributes={TextAttributes.BOLD}>{SECTIONS.find((x) => x.id === h.header)!.label}</text>
                     <text fg={colors.dim}>{` ${h.count}${h.header === "archived" && view().archivedHidden ? " · tab to show" : ""}`}</text>
                     <Show when={h.header === "archived" && view().stopFailed}>
                       <text fg={colors.error}>{` · ${view().stopFailed} still running (stop failed)`}</text>
