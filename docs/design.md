@@ -193,7 +193,7 @@ leave either metric absent without changing the UI contract.
 ## List
 
 Sections: **Working**, **Needs input**, **Finished** (done, failed, interrupted, idle),
-**Archived** (collapsed; tab shows it). Known unprompted drafts are hidden, not archived or deleted.
+**Archived** (collapsed; open only while the selection is in it: ↓ past the last row above it or tab goes in, moving back up or tab goes out). Known unprompted drafts are hidden, not archived or deleted.
 Row labels are `machine·harness`, the machine in
 its host color and the harness in its own. Working is ordered by when each session
 started working, so one you just answered lands at its bottom, next to Needs input.

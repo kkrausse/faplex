@@ -59,7 +59,6 @@ export function SessionList(props: {
   const [selected, setSelected] = createSignal(props.initialSelected ?? "");
   const [filter, setFilter] = createSignal("");
   const [filtering, setFiltering] = createSignal(false);
-  const [showArchived, setShowArchived] = createSignal(true);
   const [flash, setFlashRaw] = createSignal(props.flash ?? "");
   let flashTimer: ReturnType<typeof setTimeout> | undefined;
   const setFlash = (m: string) => {
@@ -79,6 +78,9 @@ export function SessionList(props: {
   const marked = (machine: string) => timedOut() || state.marks[machine] !== undefined;
   const all = createMemo(() => [...props.extra(), ...props.store.rows()].filter((s) => !props.hidden().has(s.key) && !isUnprompted(s) && marked(s.machine)));
   const archivedOf = (s: Session) => props.store.archivedOf(s, now);
+  // Archived is collapsed unless the selection is in it: ↓ past the last row above it opens it,
+  // and moving back up closes it.
+  const showArchived = createMemo(() => all().some((s) => s.key === selected() && archivedOf(s)));
   const stopping = (s: Session) => !!state.archiving[s.key] && state.archiving[s.key]!.failed === undefined;
   /** The stop error of an archived session that is still running. */
   const stopFailed = (s: Session) => (s.stoppable ? state.archiving[s.key]?.failed : undefined);
@@ -122,7 +124,7 @@ export function SessionList(props: {
       if (id === "archived" && !showArchived() && !q) continue;
       for (const s of rows) items.push({ row: s, section: id }), list.push(s);
     }
-    return { items, list, archivedHidden: !showArchived() && !q ? by.get("archived")!.length : 0, stopFailed: by.get("archived")!.filter((s) => stopFailed(s) !== undefined).length };
+    return { items, list, archived: by.get("archived")!, archivedHidden: !showArchived() && !q ? by.get("archived")!.length : 0, stopFailed: by.get("archived")!.filter((s) => stopFailed(s) !== undefined).length };
   });
 
   const index = createMemo(() => Math.max(0, view().list.findIndex((s) => s.key === selected())));
@@ -145,8 +147,16 @@ export function SessionList(props: {
   });
 
   const move = (d: number) => {
-    const list = view().list;
-    if (list.length) setSelected(list[Math.min(list.length - 1, Math.max(0, index() + d))]!.key);
+    const { list, archived, archivedHidden } = view();
+    if (d > 0 && archivedHidden && index() >= list.length - 1) setSelected(archived[0]!.key);
+    else if (list.length) setSelected(list[Math.min(list.length - 1, Math.max(0, index() + d))]!.key);
+  };
+  /** Into Archived, or back out to the last row above it. */
+  const toggleArchived = () => {
+    const { list, archived } = view();
+    const out = list.findLast((s) => !archivedOf(s));
+    if (!showArchived()) archived[0] && setSelected(archived[0].key);
+    else if (out) setSelected(out.key);
   };
 
   /** Next row in the same section, else the previous one: where selection goes when this row leaves. */
@@ -166,8 +176,13 @@ export function SessionList(props: {
     if (!s.id) return setFlash("not started yet");
     if (stopping(s)) return;
     if (archivedOf(s) && !s.stoppable) return setFlash("already archived");
-    const next = neighbor(s);
-    if (!showArchived() && !archivedOf(s) && next) setSelected(next);
+    // Selection stays above Archived, or following the row there would open it.
+    if (!archivedOf(s)) {
+      const list = view().list;
+      const i = list.indexOf(s);
+      const next = neighbor(s) ?? (list[i - 1] ?? list.slice(i + 1).find((o) => !archivedOf(o)))?.key;
+      if (next) setSelected(next);
+    }
     if (s.stoppable) setFlash(`stopping ${s.title}…`);
     try {
       const failed = await props.store.archive(s);
@@ -181,8 +196,11 @@ export function SessionList(props: {
     if (!s.id) return setFlash("not started yet");
     if (s.archived) return setFlash(`archived in ${s.harness} itself · restore it there`);
     if (!archivedOf(s)) return setFlash("not archived");
+    // Stay in Archived while there are more rows in it.
+    const next = neighbor(s);
     try {
       await props.store.mark(s, false);
+      if (next && selected() === s.key) setSelected(next);
       setFlash(`restored ${s.title}`);
     } catch (e) {
       setFlash(`restore failed: ${message(e)}`);
@@ -208,7 +226,7 @@ export function SessionList(props: {
       key.preventDefault();
       setFiltering(true);
     } else if (key.name === "n") props.onNew();
-    else if (key.name === "tab") setShowArchived(!showArchived());
+    else if (key.name === "tab") toggleArchived();
     else if (key.name === "x" && s) void archive(s);
     else if (key.name === "r" && s) void restore(s);
     else if (key.name === "escape" && filter()) setFilter("");
@@ -331,7 +349,7 @@ export function SessionList(props: {
                 {(h) => (
                   <box height={HEADER_H} flexShrink={0} border={["top"]} borderColor={colors.border} flexDirection="row">
                     <text fg={h.header === "archived" ? colors.dim : h.header === "needs" ? colors.permission : colors.text} attributes={TextAttributes.BOLD}>{SECTIONS.find((x) => x.id === h.header)!.label}</text>
-                    <text fg={colors.dim}>{` ${h.count}${h.header === "archived" && view().archivedHidden ? " · tab to show" : ""}`}</text>
+                    <text fg={colors.dim}>{` ${h.count}${h.header === "archived" && view().archivedHidden ? " · ↓ to show" : ""}`}</text>
                     <Show when={h.header === "archived" && view().stopFailed}>
                       <text fg={colors.error}>{` · ${view().stopFailed} still running (stop failed)`}</text>
                     </Show>

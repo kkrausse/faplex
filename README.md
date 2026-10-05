@@ -94,7 +94,7 @@ All ssh traffic to a host shares one connection (ControlMaster sockets in
 ## List
 
 Sections: **Working**, **Needs input**, **Finished** (done, failed, interrupted, idle) and
-**Archived** (collapsed; tab shows it). Each row is `machine·harness`, title, status line, then
+**Archived** (collapsed; ↓ past the last row above it opens it, moving back up closes it). Each row is `machine·harness`, title, status line, then
 **subs** (active/total subagents), **tok** (tokens in the context window) and **age** (time
 since the last update). A `⑂` or `$` after the status mark means subagents or a shell are still
 running behind the row (Claude only so far): a question asked with a dev server up is still
@@ -107,7 +107,7 @@ subagent numbers are measured, and where archive marks live.
 
 ## Keys
 
-List: ↑↓/jk move · ⏎/→ open · n new · x stop + archive · r restore · tab show archived ·
+List: ↑↓/jk move · ⏎/→ open · n new · x stop + archive · r restore · tab into/out of archived ·
 / filter · q quit.
 
 `x` moves the row to Archived at once, then in the background stops whatever is still running
