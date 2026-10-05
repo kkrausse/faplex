@@ -1,7 +1,8 @@
 // Session list across machines and harnesses, modeled on paseo-tui's list: 1-cell status gutter (plus a cell for what runs behind the row),
-// sections Working → Needs input → Finished → Archived, order within a section frozen while open
-// so live updates change badges (and sections) but never shuffle rows. Working is ordered by when
-// each session started working, so one you just answered lands at its bottom, next to Needs input.
+// sections Working → Needs input → Finished → Archived. Rows are ordered by when they entered their
+// section, so live updates change badges (and sections) but never shuffle rows within one. Working
+// has its newest at the bottom, so one you just answered lands next to Needs input; Needs input and
+// Finished are stacks with their newest on top. Archived keeps the order it had when the list opened.
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid";
 import { Index, Show, createEffect, createMemo, createSignal } from "solid-js";
@@ -21,8 +22,9 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "archived", label: "Archived" },
 ];
 
-// When each session was first seen working (its updatedAt then); outlives list remounts.
-const workingSince = new Map<string, number>();
+// The section each session is in and when it got there: now if we watched it move, else its
+// updatedAt when first seen. Outlives list remounts.
+const entered = new Map<string, { section: Section; at: number }>();
 const HEADER_H = 2;
 const TITLE_MAX = 40;
 const AGE_W = 3;
@@ -52,6 +54,8 @@ export function SessionList(props: {
   /** Rows for used new chats their source hasn't reported yet. */
   extra: () => Session[];
   onOpen: (s: Session) => void;
+  /** Open with a new client, closing the live one. */
+  onReattach: (s: Session) => void;
   onNew: () => void;
   onQuit: () => void;
 }) {
@@ -96,19 +100,25 @@ export function SessionList(props: {
   });
   const order = (a: Session, b: Session) =>
     frozen.size ? (frozen.get(a.key) ?? -1) - (frozen.get(b.key) ?? -1) || liveOrder(a, b) : liveOrder(a, b);
-  createEffect(() => {
-    const working = new Set<string>();
-    for (const s of all())
-      if (s.status === "working") {
-        working.add(s.key);
-        if (!workingSince.has(s.key)) workingSince.set(s.key, s.updatedAt);
-      }
-    for (const k of workingSince.keys()) if (!working.has(k)) workingSince.delete(k);
-  });
-  const since = (s: Session) => workingSince.get(s.key) ?? s.updatedAt;
-  const workingOrder = (a: Session, b: Session) => since(a) - since(b) || a.key.localeCompare(b.key);
+  /** Records section changes; called from the view so a row is placed the moment it moves. */
+  const stamp = () => {
+    const seen = new Set<string>();
+    for (const s of all()) {
+      seen.add(s.key);
+      const section = sectionOf(s, archivedOf(s));
+      const was = entered.get(s.key);
+      if (was?.section !== section) entered.set(s.key, { section, at: was ? Date.now() : s.updatedAt });
+    }
+    // A host that hasn't answered yet still has its rows coming.
+    if (ready()) for (const k of entered.keys()) if (!seen.has(k)) entered.delete(k);
+  };
+  const since = (s: Session) => entered.get(s.key)?.at ?? s.updatedAt;
+  const oldestFirst = (a: Session, b: Session) => since(a) - since(b) || a.key.localeCompare(b.key);
+  const newestFirst = (a: Session, b: Session) => oldestFirst(b, a);
+  const sorts: Record<Section, (a: Session, b: Session) => number> = { working: oldestFirst, needs: newestFirst, finished: newestFirst, archived: order };
 
   const view = createMemo(() => {
+    stamp();
     const q = filter().toLowerCase();
     const matched = all().filter(
       (s) => !q || s.title.toLowerCase().includes(q) || s.cwd.toLowerCase().includes(q) || label(s).toLowerCase().includes(q),
@@ -118,7 +128,7 @@ export function SessionList(props: {
     const items: Item[] = [];
     const list: Session[] = [];
     for (const { id } of SECTIONS) {
-      const rows = by.get(id)!.sort(id === "working" ? workingOrder : order);
+      const rows = by.get(id)!.sort(sorts[id]);
       if (!rows.length) continue;
       items.push({ header: id, count: rows.length });
       if (id === "archived" && !showArchived() && !q) continue;
@@ -228,7 +238,12 @@ export function SessionList(props: {
     } else if (key.name === "n") props.onNew();
     else if (key.name === "tab") toggleArchived();
     else if (key.name === "x" && s) void archive(s);
-    else if (key.name === "r" && s) void restore(s);
+    else if (key.name === "r" && key.shift && s) {
+      // A new chat's command would start another session rather than attach to this one.
+      if (!s.id) setFlash("not started yet");
+      else if (s.open) props.onReattach(s);
+      else setFlash(s.closedReason ?? "can't open this session here");
+    } else if (key.name === "r" && s) void restore(s);
     else if (key.name === "escape" && filter()) setFilter("");
     else if (key.name === "q" || (key.ctrl && key.name === "c")) props.onQuit();
   });
@@ -385,7 +400,7 @@ export function SessionList(props: {
           fallback={
             <text fg={colors.dim} wrapMode="none">
               {flash() ? `${flash()} · ` : ""}
-              {filter() ? `filter: ${filter()} · ` : ""}↑↓ move · ⏎ open · n new · x stop+archive · r restore · tab archived · / filter · q quit · ctrl+] back from a session
+              {filter() ? `filter: ${filter()} · ` : ""}↑↓ move · ⏎ open · n new · x stop+archive · r restore · R reattach · tab archived · / filter · q quit · ctrl+] back from a session
             </text>
           }
         >

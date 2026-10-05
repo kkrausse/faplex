@@ -195,8 +195,9 @@ leave either metric absent without changing the UI contract.
 Sections: **Working**, **Needs input**, **Finished** (done, failed, interrupted, idle),
 **Archived** (collapsed; open only while the selection is in it: ↓ past the last row above it or tab goes in, moving back up or tab goes out). Known unprompted drafts are hidden, not archived or deleted.
 Row labels are `machine·harness`, the machine in
-its host color and the harness in its own. Working is ordered by when each session
-started working, so one you just answered lands at its bottom, next to Needs input.
+its host color and the harness in its own. Rows are ordered by when they entered their
+section: Working has its newest at the bottom, so one you just answered lands next to Needs
+input; Needs input and Finished are stacks, newest on top.
 In an open session the mouse belongs to the harness and your terminal, as if the CLI were run
 directly. A session is archived when its
 harness archived it, you archived it here, or it is finished and untouched for 7
@@ -283,11 +284,13 @@ reopened; only a failed mark write puts the row back.
 
 ## UI
 
-Sections Working → Needs input → Finished → Archived (collapsed). Order within a
-section is frozen once every source answered (or after 5 s); live updates move
-badges and sections, never positions within a section. Working is the exception:
-it is ordered by when each session was first seen working, so a newly working
-session joins its bottom.
+Sections Working → Needs input → Finished → Archived (collapsed). Rows are ordered
+by when they entered their section (the moment we watched them move, else their
+last update when first seen), so live updates move badges and sections, never
+positions within a section. A newly working session joins the bottom of Working;
+Needs input and Finished are stacks, so a session that just finished or just
+asked for you is on top. Archived keeps the order it had once every source
+answered (or after 5 s).
 
 An open session owns the real terminal (`passthrough.ts`). The dashboard suspends
 its renderer and copies bytes both ways without an emulator in between, because

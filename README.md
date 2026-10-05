@@ -107,8 +107,11 @@ subagent numbers are measured, and where archive marks live.
 
 ## Keys
 
-List: ↑↓/jk move · ⏎/→ open · n new · x stop + archive · r restore · tab into/out of archived ·
-/ filter · q quit.
+List: ↑↓/jk move · ⏎/→ open · n new · x stop + archive · r restore · R reattach ·
+tab into/out of archived · / filter · q quit.
+
+`R` is for a session pane that looks stale or stuck: it closes the client faplex kept for that
+session and attaches a new one. The agent itself isn't touched.
 
 `x` moves the row to Archived at once, then in the background stops whatever is still running
 in the session, so an archived session can't wake itself up later (a Claude `/loop` or
