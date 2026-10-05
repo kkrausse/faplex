@@ -11,6 +11,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Required-reviewer environment: a pushed tag waits for approval in the GitHub UI.
+    environment: npm
     timeout-minutes: 10
     concurrency: npm-publish
     steps:
