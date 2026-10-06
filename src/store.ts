@@ -9,7 +9,7 @@ import { HARNESSES } from "./session.ts";
 import { QUIET, fail, type SourceError } from "./errors.ts";
 import { expand, home, loadMachines, localName, type Machine } from "./machines.ts";
 import { claudeSessions, hostFeed, launchClaude, stopClaude } from "./claude.ts";
-import { launchOpencode, opencodeSessions } from "./opencode.ts";
+import { launchOpencode, launchOpencodeMini, opencodeSessions } from "./opencode.ts";
 import { codexSessions, launchCodex } from "./codex.ts";
 import { isArchived, parseMarks, setMark, markKey, type Mark, type Marks } from "./archive.ts";
 import type { Claim } from "./session.ts";
@@ -61,10 +61,10 @@ export function createDashStore() {
     });
 
   /** Run until interrupted: a stream ending is a failure like any other, so it restarts. */
-  const supervise = (k: string, run: Effect.Effect<void, SourceError>) =>
+  const supervise = (k: string | readonly string[], run: Effect.Effect<void, SourceError>) =>
     run.pipe(
       Effect.andThen(Effect.fail(fail("failed", "stream ended"))),
-      Effect.tapError((e) => setProblem(k, e)),
+      Effect.tapError((e) => Effect.forEach(typeof k === "string" ? [k] : k, (key) => setProblem(key, e), { discard: true })),
       Effect.retry(retryPolicy),
     );
 
@@ -109,13 +109,23 @@ export function createDashStore() {
   const streamed = (m: Machine, h: Harness, s: Stream.Stream<ReadonlyArray<Session>, SourceError>) =>
     supervise(sourceKey(m.id, h), s.pipe(Stream.runForEach((rows) => setRows(sourceKey(m.id, h), rows))));
 
+  // One backend connection feeds both UI choices; never list the same session twice.
+  const opencode = (m: Machine) => {
+    const harnesses = ["opencode", "opencode-mini"] as const;
+    const keys = harnesses.map((h) => sourceKey(m.id, h));
+    const setStops = (f: Parameters<ReturnType<typeof setStop>>[0]) => keys.forEach((k) => setStop(k)(f));
+    return supervise(keys, Stream.unwrap(home(m).pipe(Effect.map((h) => opencodeSessions(m, h, setStops)))).pipe(
+      Stream.runForEach((rows) => Effect.forEach(harnesses, (h) => setRows(sourceKey(m.id, h), rows.filter((s) => s.harness === h)), { discard: true })),
+    ));
+  };
+
   const program = Effect.forEach(
     machines,
     (m) =>
       Effect.all(
         [
           claude(m),
-          streamed(m, "opencode", Stream.unwrap(home(m).pipe(Effect.map((h) => opencodeSessions(m, h, setStop(sourceKey(m.id, "opencode"))))))),
+          opencode(m),
           streamed(m, "codex", codexSessions(m, setStop(sourceKey(m.id, "codex")))),
         ],
         { concurrency: "unbounded", discard: true },
@@ -213,7 +223,7 @@ export function createDashStore() {
       const m = machine(machineId);
       return Effect.runPromise(
         expand(m, dir).pipe(
-          Effect.flatMap((d): Effect.Effect<Launch, SourceError> => (h === "claude" ? launchClaude(m, d) : h === "opencode" ? launchOpencode(d) : launchCodex(d))),
+          Effect.flatMap((d): Effect.Effect<Launch, SourceError> => (h === "claude" ? launchClaude(m, d) : h === "opencode" ? launchOpencode(d) : h === "opencode-mini" ? launchOpencodeMini(m, d) : launchCodex(d))),
         ),
       );
     },

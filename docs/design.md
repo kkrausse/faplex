@@ -95,6 +95,13 @@ pid on that host. CLI missing → not installed; CLI 1.x → unsupported (differ
 API); no file or dead pid → not running (stale). Then `forward` to the host:port
 the url names (a service may bind a non-loopback address, e.g. its Tailscale one).
 
+OpenCode and OpenCode Mini are separate picker/list identities (`oc` / `ocm`) backed
+by one stream and stop connection per machine. Mini launches create a session through
+`opencode api` with metadata `faplex.interface: mini`, then attach via
+`opencode mini -s <id>` with that directory as cwd. The metadata selects the row's
+harness and resume command on every read; untagged sessions default to full OpenCode.
+Backend failures update both source states, and sessions are partitioned, not duplicated.
+
 ### Codex
 
 `[ -S ~/.codex/app-server-control/app-server-control.sock ]` on the host, forward
@@ -117,7 +124,7 @@ closedReason?, status, prompted?, detail, updatedAt, model, archived }`. `open.c
 machine-agnostic; the pane wraps it with `on(machine, cmd, { cwd, tty: true })`.
 Status: `needs | working | done | failed | interrupted | idle` (idle = never
 prompted, e.g. a fresh `claude --bg`). A new session's claim is data:
-`{ id }` (Claude) or `{ firstNewIn: dir }` (OpenCode/Codex).
+`{ id }` (Claude/OpenCode Mini) or `{ firstNewIn: dir }` (OpenCode/Codex).
 
 `claude --bg` refuses a folder that was never trusted ("Workspace not trusted"), and only the
 plain CLI shows the trust prompt. The launch then returns `{ trust: true }` with `claude` as the
@@ -206,7 +213,7 @@ afterwards (new input, a turn starting), brings it back. Rows are labelled `mach
 (red) and harnesses that aren't there (dim: not installed, unsupported, not running).
 
 The list is a table: label (the machine's `short` name and the harness as `clau`, `codex` or
-`openc`), session title (cut at 40 columns, or shorter on a narrow terminal so the right-hand
+`oc` / `ocm`), session title (cut at 40 columns, or shorter on a narrow terminal so the right-hand
 columns stay on screen; the footer has it in full), status line, then **subs**, **tok** and **age** (`<1m`, `5m`, `2h`, `3d`
 since the last update). Columns are as wide as the rows on screen need, and a column
 no row has a value for is left out. The working directory is in the footer only.

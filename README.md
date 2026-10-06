@@ -158,7 +158,15 @@ What a harness needs to appear here, per machine:
 |---|---|---|---|---|
 | Claude Code | per-host sh loop: `claude agents --json --all` + `~/.claude/jobs/<id>/state.json` every 2 s | `claude attach <id>` | `claude --bg`, then attach | `claude stop <id>` (ends the process and its wakeups; background sessions only) |
 | OpenCode 2.x | background service HTTP API (`~/.local/state/opencode/service.json`, basic auth user `opencode`), re-read on `/api/event` events | `opencode -s <id>` | `opencode <dir>` | `POST /api/session/<id>/interrupt` |
+| OpenCode Mini | same OpenCode service and live updates | `opencode mini -s <id>` | create a tagged session, then `opencode mini -s <id>` in the chosen directory | same OpenCode interrupt |
 | Codex | app-server daemon, WebSocket over `~/.codex/app-server-control/app-server-control.sock`, re-read on thread notifications | `codex resume <id>` | `codex -C <dir>` | `turn/interrupt` on the in-progress turn |
+
+The new-session picker offers `opencode` and `opencode-mini` separately; list rows show
+`oc` and `ocm`. Mini is the minimal, scrollback-style interface shipped in the same
+OpenCode executable, so it updates with OpenCode. Faplex stores the Mini choice in
+session metadata (`faplex.interface: mini`), preserving it across dashboard restarts
+and machines. Both choices share one status connection and each session appears only
+once. Untagged sessions, including ones started outside faplex, default to `oc`.
 
 Remote OpenCode ports and Codex sockets are forwarded over the shared ssh connection.
 OpenCode 1.x and Claude Code without `agents --json` show as unsupported.

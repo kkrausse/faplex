@@ -16,6 +16,7 @@ export const colors = {
   claude: "#d97757",
   codex: "#e4e4e7",
   opencode: "#a78bfa",
+  "opencode-mini": "#a78bfa",
 };
 
 // Per-machine label colors, clear of the harness and status colors.
@@ -24,7 +25,7 @@ export const HOST_COLORS = ["#38bdf8", "#f472b6", "#2dd4bf", "#a3e635", "#818cf8
 export const providerColor = (p: string) => (colors as Record<string, string>)[p] ?? colors.muted;
 
 /** Harness names cut to fit a narrow label column. */
-export const harnessShort = (h: string) => ({ claude: "clau", opencode: "openc" } as Record<string, string>)[h] ?? h;
+export const harnessShort = (h: string) => ({ claude: "clau", opencode: "oc", "opencode-mini": "ocm" } as Record<string, string>)[h] ?? h;
 
 // One shared ticker so every working row spins in step without per-row timers.
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];

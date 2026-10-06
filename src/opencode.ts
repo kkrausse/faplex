@@ -3,8 +3,8 @@
 // stream says when sessions, permissions or forms change; each relevant event re-reads the list.
 // Pending permissions and forms mean the agent needs input.
 import { Effect, Schema, Stream } from "effect";
-import { decodeJson, decodeValue, fail, type SourceError } from "./errors.ts";
-import { forward, sh, type Machine } from "./machines.ts";
+import { decodeJson, decodeValue, fail, firstLine, type SourceError } from "./errors.ts";
+import { forward, q, sh, type Machine } from "./machines.ts";
 import { sessionKey, type ContextUsage, type Session, type Status } from "./session.ts";
 import { latestContext, subagentSummary } from "./metrics.ts";
 import { readPages } from "./pages.ts";
@@ -38,6 +38,7 @@ const service = (m: Machine) =>
 
 const Info = Schema.Struct({
   id: Schema.String,
+  metadata: Schema.optionalKey(Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown))),
   parentID: Schema.optionalKey(Schema.NullOr(Schema.String)),
   title: Schema.optionalKey(Schema.String),
   model: Schema.optionalKey(Schema.NullOr(Schema.Struct({ id: Schema.String }))),
@@ -64,6 +65,12 @@ const Model = Schema.Struct({ id: Schema.String, providerID: Schema.String, limi
 const Models = decodeValue(data(Schema.Array(Model)), "opencode models");
 
 type Api = { base: string; auth: string };
+
+// Mini is a client choice, not a different backend. Tag only sessions launched by faplex.
+export const MINI_METADATA = { "faplex.interface": "mini" };
+export const opencodeHarness = (metadata?: Readonly<Record<string, unknown>> | null) =>
+  metadata?.["faplex.interface"] === "mini" ? "opencode-mini" as const : "opencode" as const;
+export const opencodeCommand = (id: string, mini: boolean) => ["opencode", ...(mini ? ["mini"] : []), "-s", id];
 
 const get = (api: Api, path: string) =>
   Effect.tryPromise({
@@ -156,10 +163,11 @@ const list = (m: Machine, home: string, api: Api, prompts: PromptCache, metrics:
           : s.outcome === "interrupted" ? "interrupted"
           : "idle";
         const cwd = s.location?.directory ?? home;
+        const harness = opencodeHarness(s.metadata);
         return {
           machine: m.id,
-          harness: "opencode",
-          key: sessionKey(m.id, "opencode", s.id),
+          harness,
+          key: sessionKey(m.id, harness, s.id),
           id: s.id,
           title: s.title || s.id,
           cwd,
@@ -172,7 +180,7 @@ const list = (m: Machine, home: string, api: Api, prompts: PromptCache, metrics:
           updatedAt: s.time.updated,
           archived: !!s.time.archived,
           stoppable: s.id in active.data,
-          open: { cmd: ["opencode", "-s", s.id], cwd },
+          open: { cmd: opencodeCommand(s.id, harness === "opencode-mini"), cwd },
         };
       });
   });
@@ -238,3 +246,15 @@ export const opencodeSessions = (m: Machine, home: string, setStop: (stop: ((id:
   );
 
 export const launchOpencode = (dir: string) => Effect.succeed({ cmd: ["opencode", dir], cwd: dir, claim: { firstNewIn: dir } });
+
+const Created = decodeJson(Schema.Struct({ data: Schema.Struct({ id: Schema.String }) }), "opencode create session");
+export const launchOpencodeMini = (m: Machine, dir: string, run: typeof sh = sh) =>
+  Effect.gen(function* () {
+    // Create with metadata atomically, then claim by ID instead of guessing among
+    // concurrent new sessions. `api` discovers/starts the same service as the CLI.
+    const body = JSON.stringify({ location: { directory: dir }, metadata: MINI_METADATA });
+    const out = yield* run(m, `opencode mini --help >/dev/null && opencode api post /api/session --data ${q(body)}`);
+    if (out.code !== 0) return yield* fail("failed", firstLine(out.stderr) || `opencode mini launch exited ${out.code}`);
+    const { data: { id } } = yield* Created(out.stdout);
+    return { cmd: opencodeCommand(id, true), cwd: dir, claim: { id } };
+  });

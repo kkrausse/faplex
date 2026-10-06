@@ -1,5 +1,5 @@
-export type Harness = "claude" | "opencode" | "codex";
-export const HARNESSES: readonly Harness[] = ["claude", "opencode", "codex"];
+export type Harness = "claude" | "opencode" | "opencode-mini" | "codex";
+export const HARNESSES: readonly Harness[] = ["claude", "opencode", "opencode-mini", "codex"];
 
 /** done/failed/interrupted are finished runs; idle was never prompted (or has no outcome yet). */
 export type Status = "needs" | "working" | "done" | "failed" | "interrupted" | "idle";
