@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { Effect } from "effect";
 import { launchOpencode, launchOpencodeMini, MINI_METADATA, opencodeCommand, opencodeHarness } from "./opencode.ts";
 import { HARNESSES } from "./session.ts";
@@ -38,7 +39,7 @@ describe("Mini launch through the host CLI", () => {
   });
 
   const cli = (script: string) => {
-    tmp = mkdtempSync("/tmp/opencode/faplex-mini-test-");
+    tmp = mkdtempSync(`${tmpdir()}/faplex-mini-test-`);
     writeFileSync(`${tmp}/opencode`, `#!/bin/sh\n${script}\n`, { mode: 0o700 });
   };
 
