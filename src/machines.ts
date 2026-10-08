@@ -69,14 +69,14 @@ function spawnCollect(argv: string[], ...extra: string[]): Effect.Effect<Output,
 }
 
 /** Run to completion on the machine. ssh's own failures (exit 255) are `unreachable`. */
-export const exec = (m: Machine, cmd: readonly string[], opts: { cwd?: string; stdin?: string; timeout?: number } = {}) =>
+export const exec = (m: Machine, cmd: readonly string[], opts: { cwd?: string; stdin?: string | Blob; timeout?: number } = {}) =>
   Effect.gen(function* () {
     yield* ensureMaster(m);
     const out = yield* Effect.tryPromise({
       try: async (signal) => {
         const p = Bun.spawn(on(m, cmd, { cwd: opts.cwd }), {
           cwd: m.ssh ? homedir() : opts.cwd,
-          stdin: opts.stdin === undefined ? "ignore" : new TextEncoder().encode(opts.stdin),
+          stdin: typeof opts.stdin === "string" ? new TextEncoder().encode(opts.stdin) : (opts.stdin ?? "ignore"),
           stdout: "pipe",
           stderr: "pipe",
           signal,

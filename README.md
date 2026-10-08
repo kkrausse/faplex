@@ -87,7 +87,8 @@ To keep them, `~/.config/faplex/config.json`, every key optional:
     { "ssh": "pi" }
   ],
   "archiveAfterHours": 24,
-  "closeHiddenAfterMinutes": 15
+  "closeHiddenAfterMinutes": 15,
+  "uploadDrops": false
 }
 ```
 
@@ -104,6 +105,9 @@ To keep them, `~/.config/faplex/config.json`, every key optional:
   Archived. This is the knob for how quickly Finished empties.
 - `closeHiddenAfterMinutes` (default 15): how long a session client you aren't looking at is
   kept before it is closed.
+- `uploadDrops` (default false): with a remote session open, a pasted or dropped path to a local
+  file is copied to the remote machine's temp directory, and the path there is typed instead.
+  See [Keys](#keys).
 
 `$schema` gives editors completion and checking. A file that doesn't fit stops faplex at
 startup with the path and the field. An older `machines.json` (just the `machines` array) is
@@ -163,6 +167,13 @@ Every other key, ctrl+c included, goes to the harness. The client stays alive in
 background (●) and repaints when reopened; clients not shown for 15 minutes
 (`closeHiddenAfterMinutes`) are closed. Opening a session clears the terminal's screen and scrollback first. An unused new chat is cached for reuse ("·ready")
 and stays out of the list; `n` reopens the picker on it.
+
+A terminal handles a dropped file by pasting its local path, which names nothing on another
+machine. With `uploadDrops` on and a remote session open, a paste that is only paths to local
+files (up to 200 MiB each) is held while they are copied over the shared ssh connection to
+`${TMPDIR:-/tmp}/faplex-<uid>/drops/` on that machine, then typed with those paths. A path that
+also exists on the remote is left as it is, and so is the whole paste if a copy fails. Copies
+older than a day are deleted at the next drop; nothing else is written on the remote.
 
 ## Providers
 

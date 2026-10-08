@@ -1,4 +1,4 @@
-// ~/.config/faplex/config.json: the machines to list and two timings. Every key is optional and
+// ~/.config/faplex/config.json: the machines to list, two timings and one switch. Every key is optional and
 // no file at all means this machine with the defaults. schema.json at the repo root is generated
 // from the schema here (scripts/schema.ts), so editors can complete and check the file.
 import { existsSync, readFileSync } from "node:fs";
@@ -26,6 +26,8 @@ export interface Config {
   readonly archiveAfterMs: number;
   /** A session client that hasn't been on screen for this long is closed. */
   readonly closeHiddenAfterMs: number;
+  /** Copy local files pasted or dropped into a remote session to that machine (drop.ts). */
+  readonly uploadDrops: boolean;
 }
 
 const text = (description: string) => Schema.optionalKey(Schema.String.annotate({ description }));
@@ -46,6 +48,12 @@ export const ConfigSchema = Schema.Struct({
   machines: Schema.optionalKey(Schema.Array(MachineSchema).annotate({ description: "Machines to list besides this one. This machine is always listed; an entry without `ssh` names or configures it." })),
   archiveAfterHours: positive("A finished session untouched for this many hours moves to Archived: how quickly Finished empties.", 24),
   closeHiddenAfterMinutes: positive("A session client not shown for this many minutes is closed. The agent carries on in its daemon.", 15),
+  uploadDrops: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description: "With a remote session open, a pasted or dropped path to a local file is copied to the remote machine's temp directory and the path there is typed instead.",
+      default: false,
+    }),
+  ),
 }).annotate({ title: "faplex config", description: "~/.config/faplex/config.json. Every key is optional." });
 
 export const CONFIG_DIR = `${homedir()}/.config/faplex`;
@@ -96,5 +104,6 @@ export function loadConfig(hosts: readonly string[] = []): Config {
     machines,
     archiveAfterMs: (raw.archiveAfterHours ?? 24) * 3600_000,
     closeHiddenAfterMs: (raw.closeHiddenAfterMinutes ?? 15) * 60_000,
+    uploadDrops: raw.uploadDrops ?? false,
   };
 }

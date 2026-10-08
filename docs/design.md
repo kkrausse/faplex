@@ -318,3 +318,22 @@ answers the harness. A record of the terminal modes the harness switched on
 the list and re-applied on reopening. A hidden client is kept one row short, so
 reopening is a real resize and the harness repaints itself. Clients not shown for 15
 minutes are closed (agents keep running in their daemons).
+
+Input is the one place the bytes are looked at, and only for remote clients with `uploadDrops`
+on (`drop.ts`; off by default, and then keys go to the PTY as before). A terminal turns a
+dropped file into a paste of its local path, and faplex is the only layer that knows the session
+is on another machine. A chunk is a drop when all of it, bracketed or not, is absolute paths to
+local regular files of at most 200 MiB: separated by spaces or newlines, each backslash-escaped,
+single- or double-quoted, or a `file://` URL. That check is a regex pass and a `stat` per path,
+so typing isn't held; the only input ever waited for is a bracketed paste that starts like a
+path and hasn't ended, for at most 1 s or 8 KiB.
+
+Each file then goes through `exec` like any other command, with the file as stdin: a `sh`
+script that exits early if the pasted path exists there too (it was meant as a remote path and
+is left alone), makes `${TMPDIR:-/tmp}/faplex-<uid>/drops` under umask 077 and checks it owns
+it, deletes files in it older than a day, and `cat`s stdin to `<8 hex>-<basename>`, the name
+reduced to shell-safe characters. So the host interface stays "run a command, forward a port",
+nothing is needed on the remote beyond POSIX sh, and nothing outside that directory is touched.
+The paste is forwarded with the new paths in the framing and quoting it arrived in; unchanged
+paths keep their exact text. Input arriving during the copy queues behind it. Any failure
+forwards the original paste.

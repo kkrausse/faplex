@@ -53,6 +53,11 @@
       "exclusiveMinimum": 0,
       "description": "A session client not shown for this many minutes is closed. The agent carries on in its daemon.",
       "default": 15
+    },
+    "uploadDrops": {
+      "type": "boolean",
+      "description": "With a remote session open, a pasted or dropped path to a local file is copied to the remote machine's temp directory and the path there is typed instead.",
+      "default": false
     }
   },
   "additionalProperties": true,

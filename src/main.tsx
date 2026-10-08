@@ -6,6 +6,7 @@ import { createDashStore, type DashStore, type Launch } from "./store.ts";
 import { NewSession, type Pick } from "./new-session.tsx";
 import { SessionList } from "./list.tsx";
 import { on } from "./machines.ts";
+import { remoteDrops } from "./drop.ts";
 import { CLEAR, createModes, createShadow, isBackInput, isLeftInput, type Modes, type Shadow } from "./passthrough.ts";
 import { hasStarted, sessionKey, type Claim, type Session } from "./session.ts";
 import { colors } from "./theme.ts";
@@ -35,6 +36,8 @@ store.start();
 type Client = {
   session: Session;
   proc: Bun.Subprocess;
+  /** Input for the CLI. With `uploadDrops`, a remote one gets dropped local files copied over on the way (drop.ts). */
+  send: (data: Uint8Array) => void;
   /** Never drawn; answers whether the cursor is at an empty prompt. */
   shadow: Shadow;
   /** Terminal modes the CLI switched on, undone for the list and re-applied on reopening. */
@@ -93,7 +96,7 @@ function App(props: { store: DashStore }) {
     const left = isLeftInput(input) && (c.exited !== undefined || c.shadow.atPromptStart());
     if (isBackInput(input) || left) return back();
     if (c.exited !== undefined) return;
-    c.proc.terminal?.write(data);
+    c.send(data);
   };
   const onResize = () => {
     const c = view();
@@ -165,7 +168,7 @@ function App(props: { store: DashStore }) {
   function spawn(s: Session): Client {
     const m = props.store.machine(s.machine);
     const { cols, rows } = size();
-    const c: Client = { session: s, proc: undefined!, shadow: createShadow(cols, rows), modes: createModes(), shownAt: Date.now(), tail: "" };
+    const c: Client = { session: s, proc: undefined!, send: undefined!, shadow: createShadow(cols, rows), modes: createModes(), shownAt: Date.now(), tail: "" };
     const decoder = new TextDecoder();
     // Store values are proxies; Bun.spawn needs a plain array.
     const cmd = on(m, [...s.open!.cmd], { cwd: s.open!.cwd, tty: true });
@@ -185,6 +188,9 @@ function App(props: { store: DashStore }) {
       },
     });
     c.proc = proc;
+    // A paste held for a copy may come out after the CLI is gone.
+    const write = (d: Uint8Array) => void (c.exited === undefined && proc.terminal?.write(d));
+    c.send = m.ssh && config.uploadDrops ? remoteDrops(m, write) : write;
     proc.exited.then((code) => {
       c.exited = code;
       syncLive();
