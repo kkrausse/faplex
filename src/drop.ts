@@ -9,7 +9,8 @@ import { exec, type Machine } from "./machines.ts";
 
 const START = "\x1b[200~";
 const END = "\x1b[201~";
-const MAX_BYTES = 200 * 1024 * 1024;
+// Files have no size limit, so the copy gets long enough for a large video on a slow link.
+const COPY_MS = 3_600_000;
 // A bracketed paste still missing its end is held this long, and no larger than this.
 const HOLD_MS = 1000;
 const HOLD_BYTES = 8192;
@@ -72,10 +73,7 @@ export function parseDrop(input: string): Drop | undefined {
   };
 }
 
-const droppable = (path: string) => {
-  const stat = statSync(path, { throwIfNoEntry: false });
-  return !!stat?.isFile() && stat.size <= MAX_BYTES;
-};
+const droppable = (path: string) => !!statSync(path, { throwIfNoEntry: false })?.isFile();
 
 // $1: the path as pasted, left alone when it names something on this host too. $2: the name to
 // store stdin under. Prints where it went. Files dropped more than a day ago are removed here.
@@ -92,7 +90,7 @@ const copy = (m: Machine, path: string) =>
   Effect.gen(function* () {
     // Shell-safe, so the harness reads the path the same in whatever quoting the paste used.
     const name = `${randomBytes(4).toString("hex")}-${basename(path).replace(/[^\p{L}\p{N}._-]+/gu, "-").slice(-80)}`;
-    const out = yield* exec(m, ["sh", "-c", RECEIVE, "sh", path, name], { stdin: Bun.file(path), timeout: 300_000 });
+    const out = yield* exec(m, ["sh", "-c", RECEIVE, "sh", path, name], { stdin: Bun.file(path), timeout: COPY_MS });
     if (out.code === 3) return path;
     if (out.code !== 0 || !out.stdout.startsWith("/")) return yield* Effect.fail(out.stderr);
     return out.stdout;

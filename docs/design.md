@@ -323,7 +323,7 @@ Input is the one place the bytes are looked at, and only for remote clients with
 on (`drop.ts`; off by default, and then keys go to the PTY as before). A terminal turns a
 dropped file into a paste of its local path, and faplex is the only layer that knows the session
 is on another machine. A chunk is a drop when all of it, bracketed or not, is absolute paths to
-local regular files of at most 200 MiB: separated by spaces or newlines, each backslash-escaped,
+local regular files of any size: separated by spaces or newlines, each backslash-escaped,
 single- or double-quoted, or a `file://` URL. That check is a regex pass and a `stat` per path,
 so typing isn't held; the only input ever waited for is a bracketed paste that starts like a
 path and hasn't ended, for at most 1 s or 8 KiB.

@@ -170,7 +170,7 @@ and stays out of the list; `n` reopens the picker on it.
 
 A terminal handles a dropped file by pasting its local path, which names nothing on another
 machine. With `uploadDrops` on and a remote session open, a paste that is only paths to local
-files (up to 200 MiB each) is held while they are copied over the shared ssh connection to
+files (of any size) is held while they are copied over the shared ssh connection to
 `${TMPDIR:-/tmp}/faplex-<uid>/drops/` on that machine, then typed with those paths. A path that
 also exists on the remote is left as it is, and so is the whole paste if a copy fails. Copies
 older than a day are deleted at the next drop; nothing else is written on the remote.
