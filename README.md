@@ -22,9 +22,13 @@ opens the harness's own CLI on the row you pick.
 - **Safe to quit.** It holds nothing the sessions depend on.
 
 ```sh
-bunx faplex              # needs Bun (https://bun.sh); runs without installing
-bun add -g faplex        # or install the `faplex` command
+bunx faplex              # runs without installing; `npx faplex` works too
+bun add -g faplex        # or install the `faplex` command (`npm i -g faplex` likewise)
+faplex devbox pi         # this machine plus two ssh hosts, no config needed
 ```
+
+faplex runs on [Bun](https://bun.sh). Started through npm or npx it finds the `bun` on your
+PATH, and tells you how to install it if there is none.
 
 ## How it compares
 
@@ -62,30 +66,48 @@ harness can change its UI, its tools and its transcript rendering without faplex
 What it does depend on is young: `claude agents --json`, the OpenCode 2.x service API and the
 Codex app-server socket are all recent, and a change to one needs an adapter fix. When that
 happens the damage is contained: every response is schema-checked, so one harness on one machine
-shows an error in the footer and the rest of the list keeps working. Context tokens and subagent
+shows an error above the list and the rest of the list keeps working. Context tokens and subagent
 counts lean on more (Claude's are read from its transcript files); they are optional and drop
 out on their own without affecting the list.
 
-## Machines
+## Config
 
-`~/.config/faplex/machines.json` (created with just this machine if absent):
+None is needed: with no file, faplex lists this machine, called `local`. Other machines can be
+named on the command line. `faplex devbox pi` lists this machine plus those two for this run:
+an argument is a machine `id` from the config file, else an ssh alias/host. Nothing is written.
+
+To keep them, `~/.config/faplex/config.json`, every key optional:
 
 ```json
-[
-  { "id": "laptop" },
-  { "id": "devbox", "ssh": "devbox", "dir": "~/src", "short": "dev" },
-  { "id": "pi", "ssh": "pi" }
-]
+{
+  "$schema": "https://raw.githubusercontent.com/kkrausse/faplex/main/schema.json",
+  "machines": [
+    { "id": "laptop" },
+    { "ssh": "devbox", "dir": "~/src", "short": "dev" },
+    { "ssh": "pi" }
+  ],
+  "archiveAfterHours": 24,
+  "closeHiddenAfterMinutes": 15
+}
 ```
 
-- `id`: the name shown in the list. The entry without `ssh` is this machine; `"local"` there is
-  shown as its Tailscale name (else its hostname).
-- `short`: a shorter name for list rows (e.g. `"dev"`); the footer and new-session picker keep `id`.
-- `ssh`: an alias/host from your ssh config (key auth; the dashboard never prompts).
-- `dir`: default start directory for new sessions there (default `~`).
-- `color`: label color for the host (hex); defaults to a palette color by position in the file.
-- `path`: extra PATH entries on the host. `~/.local/bin`, `~/.bun/bin` and
-  `~/.opencode/bin` are always added, since non-interactive ssh skips `.bashrc`.
+- `machines`: the machines besides this one. This machine is always listed; an entry without
+  `ssh` is this machine and can rename it or set its other fields.
+  - `ssh`: an alias/host from your ssh config (key auth; the dashboard never prompts).
+  - `id`: the name shown in the list. Defaults to `ssh`, or to `local` for this machine.
+  - `short`: a shorter name for list rows (e.g. `"dev"`); the footer and new-session picker keep `id`.
+  - `dir`: default start directory for new sessions there (default `~`).
+  - `color`: label color for the host (hex); defaults to a palette color by position in the list.
+  - `path`: extra PATH entries on the host. `~/.local/bin`, `~/.bun/bin` and
+    `~/.opencode/bin` are always added, since non-interactive ssh skips `.bashrc`.
+- `archiveAfterHours` (default 24): a finished session untouched for this long moves to
+  Archived. This is the knob for how quickly Finished empties.
+- `closeHiddenAfterMinutes` (default 15): how long a session client you aren't looking at is
+  kept before it is closed.
+
+`$schema` gives editors completion and checking. A file that doesn't fit stops faplex at
+startup with the path and the field. An older `machines.json` (just the `machines` array) is
+still read when there is no `config.json`.
 
 All ssh traffic to a host shares one connection (ControlMaster sockets in
 `~/.local/state/faplex/ssh`). sshd allows 10 sessions per connection by default
@@ -99,8 +121,14 @@ Sections: **Working**, **Needs input**, **Finished** (done, failed, interrupted,
 since the last update). A `⑂` or `$` after the status mark means subagents or a shell are still
 running behind the row (Claude only so far): a question asked with a dev server up is still
 Needs input, and a finished turn with one left running is still Finished. A session is archived when its harness archived it, you archived it
-here, or it has been finished and untouched for 7 days. Archiving here is not final: opening
+here, or it has been finished and untouched for 24 hours (`archiveAfterHours`). Archiving here is not final: opening
 the session, or anything happening in it afterwards, brings it back. Unprompted drafts are hidden.
+
+Failed turns are at the top of Finished. A line above the list appears when something needs
+you: a machine that can't be reached or a harness whose answer couldn't be read (red; that
+source's last known rows stay, dimmed), and a harness that is installed but whose daemon isn't
+running, with the command that starts it (`codex app-server daemon start`,
+`opencode service start`). Harnesses that aren't installed are listed dimly at the bottom.
 
 [docs/design.md](docs/design.md#list) has the details: ordering, how each harness's token and
 subagent numbers are measured, and where archive marks live.
@@ -120,7 +148,7 @@ until that is done. If the stop fails the session is archived anyway and stays r
 Archived heading says how many are still running); `x` on it tries the stop again.
 The conversation is kept either way; opening the session resumes it and takes it out of the archive.
 
-`faplex ps` lists the running dashboards and marks the ones whose terminal is gone;
+`faplex --help` has the command line. `faplex ps` lists the running dashboards and marks the ones whose terminal is gone;
 `faplex kill` stops those (`faplex kill all` stops every one). Sessions are not affected.
 
 New session: ↑↓ machine · ←→ harness · tab edit start dir · ⏎ open · esc back.
@@ -132,8 +160,8 @@ In an open session, go back to the list with:
 - ← on an empty prompt
 
 Every other key, ctrl+c included, goes to the harness. The client stays alive in the
-background (●) and repaints when reopened; clients not shown for 15 minutes are
-closed. Opening a session clears the terminal's screen and scrollback first. An unused new chat is cached for reuse ("·ready")
+background (●) and repaints when reopened; clients not shown for 15 minutes
+(`closeHiddenAfterMinutes`) are closed. Opening a session clears the terminal's screen and scrollback first. An unused new chat is cached for reuse ("·ready")
 and stays out of the list; `n` reopens the picker on it.
 
 ## Providers
@@ -141,7 +169,8 @@ and stays out of the list; `n` reopens the picker on it.
 What a harness needs to appear here, per machine:
 
 - **A daemon that owns its sessions**, so they outlive any client, including the dashboard's pane.
-- **Presence**: a cheap check that says installed / too old / daemon not running (shown dimly, not as errors).
+- **Presence**: a cheap check that says installed / too old / daemon not running (not errors: the
+  first two are shown dimly, the last with the command that starts the daemon).
 - **List**: every session with id, title, cwd, last update, model, whether the harness archived it,
   and a status that maps onto `working | needs | done | failed | interrupted | idle`. Activity
   (working, needs input) must come from the live process, not from a self-reported note.

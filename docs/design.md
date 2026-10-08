@@ -16,7 +16,10 @@ that source's rows in a Solid store; the UI never sees Effect.
 
 ## Machines
 
-A machine is `{ id, ssh?, dir?, path? }` from `~/.config/faplex/machines.json`.
+A machine is `{ id, ssh?, dir?, path? }` from `~/.config/faplex/config.json` (config.ts), or
+`{ id: arg, ssh: arg }` for a command-line argument that names no configured machine. The one
+without `ssh` is this machine; it is always in the list and is called `local` unless an entry
+names it. Nothing is looked up to name it and nothing is written at startup.
 There is no machine service, just two helpers:
 
 - `on(machine, cmd, { cwd?, tty? })`: `cmd` unchanged locally; remotely an
@@ -207,10 +210,15 @@ section: Working has its newest at the bottom, so one you just answered lands ne
 input; Needs input and Finished are stacks, newest on top.
 In an open session the mouse belongs to the harness and your terminal, as if the CLI were run
 directly. A session is archived when its
-harness archived it, you archived it here, or it is finished and untouched for 7
-days. Archiving here is not final: opening the session, or anything happening in it
-afterwards (new input, a turn starting), brings it back. Rows are labelled `machine·harness`; the footer lists sources with problems
-(red) and harnesses that aren't there (dim: not installed, unsupported, not running).
+harness archived it, you archived it here, or it is finished and untouched for 24
+hours (`archiveAfterHours`). Archiving here is not final: opening the session, or anything happening in it
+afterwards (new input, a turn starting), brings it back. Rows are labelled `machine·harness`. One line above the list holds what needs acting on: sources
+with real problems (red; an unreachable machine once, not once per harness) and daemons that
+aren't running, with the command that starts them (`DAEMON_START` in session.ts). A source with a
+real problem keeps its last known rows, drawn dim with the spinner stopped. Harnesses that aren't
+there (not installed, unsupported) are listed dimly in the footer. With no rows at all the body
+says how to start a session and lists the daemon commands a line each. Failed turns sort to the
+top of Finished.
 
 The list is a table: label (the machine's `short` name and the harness as `clau`, `codex` or
 `oc` / `ocm`), session title (cut at 40 columns, or shorter on a narrow terminal so the right-hand
@@ -264,7 +272,7 @@ the stream's scope); stopping while a source is disconnected fails.
 ## Archive
 
 Archived = harness archive, OR a dashboard mark with nothing happening since, OR (not
-needs/working and `updatedAt` older than 7 days) unless explicitly restored. Marks live on
+needs/working and `updatedAt` older than `archiveAfterHours`, default 24) unless explicitly restored. Marks live on
 each host in `~/.config/faplex/archive.json` as `{ "harness:id": <ms> | true | false }`:
 a number is when it was archived, read from that host's clock (`date +%s`) because the
 sessions' `updatedAt` comes from the same clock; it holds while `updatedAt <= mark + 30 s`
