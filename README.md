@@ -217,3 +217,13 @@ how it works.
 with the real Claude Code, Codex and OpenCode pointed at a fake model API, and seeds a few
 sessions (`e2e/compose.yaml` lists the commands). The demo above is recorded on it:
 `e2e/record.sh` writes `e2e/out/demo.gif`, which is copied to `docs/demo.gif`.
+
+## Releasing
+
+```sh
+bun run release          # patch; or: bun run release minor | major | x.y.z
+```
+
+That is the whole release: it pulls `main`, runs `npm login` if you aren't logged in, runs the
+tests, bumps the version, publishes (npm asks for 2FA), then commits and pushes the bump. Don't
+run `npm publish` by hand: it doesn't bump the version, so it fails on the one already published.

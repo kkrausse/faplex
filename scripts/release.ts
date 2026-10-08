@@ -1,5 +1,6 @@
 // bun scripts/release.ts [patch|minor|major|x.y.z]   (bun run release)
-//   Publishes to npm from this machine: bump the version, npm publish (npm asks for 2FA), commit, push main.
+//   The one way to publish: pull main, log in to npm if needed, bump the version, npm publish
+//   (npm asks for 2FA), commit, push main.
 //   No git tag is created: pushing a v* tag is what triggers .github/workflows/publish.yml.
 import { readFileSync } from "node:fs";
 
@@ -14,7 +15,9 @@ const fail = (message: string): never => {
 
 if (out("git", "branch", "--show-current") !== "main") fail("release from main");
 if (out("git", "status", "--porcelain", "--untracked-files=no")) fail("commit or discard changes first");
-if (!out("npm", "whoami")) fail("not logged in to npm; run `npm login` first");
+// A checkout behind origin would publish old code under the new version.
+if (!run("git", "pull", "--ff-only", "origin", "main")) fail("could not fast-forward main to origin/main; sort that out first");
+if (!out("npm", "whoami") && (!run("npm", "login") || !out("npm", "whoami"))) fail("npm login failed");
 
 if (!run("bun", "test")) fail("tests failed");
 if (!run("npm", "version", bump, "--no-git-tag-version")) fail("version bump failed");
