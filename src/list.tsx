@@ -2,14 +2,15 @@
 // sections Working → Needs input → Finished → Archived. Rows are ordered by when they entered their
 // section, so live updates change badges (and sections) but never shuffle rows within one. Working
 // has its newest at the bottom, so one you just answered lands next to Needs input; Needs input and
-// Finished are stacks with their newest on top. Archived keeps the order it had when the list opened.
+// Finished are stacks with their newest on top (failed turns above the rest of Finished). Archived
+// keeps the order it had when the list opened.
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid";
 import { Index, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { Background, Session, Status } from "./session.ts";
-import { isUnprompted } from "./session.ts";
+import { DAEMON_START, isUnprompted } from "./session.ts";
 import { QUIET } from "./errors.ts";
-import type { DashStore } from "./store.ts";
+import { sourceKey, type DashStore } from "./store.ts";
 import { colors, harnessShort, providerColor, spinner } from "./theme.ts";
 import { age, fit, relTime, shortPath } from "./format.ts";
 import { contextCell, subagentCell } from "./metrics.ts";
@@ -115,7 +116,9 @@ export function SessionList(props: {
   const since = (s: Session) => entered.get(s.key)?.at ?? s.updatedAt;
   const oldestFirst = (a: Session, b: Session) => since(a) - since(b) || a.key.localeCompare(b.key);
   const newestFirst = (a: Session, b: Session) => oldestFirst(b, a);
-  const sorts: Record<Section, (a: Session, b: Session) => number> = { working: oldestFirst, needs: newestFirst, finished: newestFirst, archived: order };
+  // A failed turn is the one finished row that wants a look, so those head the stack.
+  const failedFirst = (a: Session, b: Session) => Number(b.status === "failed") - Number(a.status === "failed") || newestFirst(a, b);
+  const sorts: Record<Section, (a: Session, b: Session) => number> = { working: oldestFirst, needs: newestFirst, finished: failedFirst, archived: order };
 
   const view = createMemo(() => {
     stamp();
@@ -253,14 +256,32 @@ export function SessionList(props: {
     for (const s of all()) if (s.status === "needs" || s.status === "working") c[s.status]++;
     return c;
   });
-  // Real failures first (red), then quiet "not here" states grouped by reason (dim).
+  // What needs acting on goes above the list: real failures (an unreachable machine once, not once
+  // per harness), and daemons that aren't running, with the command that starts them. Harnesses
+  // that simply aren't there (not installed, unsupported) stay dim in the footer, grouped by reason.
   const problems = createMemo(() => {
     const srcs = Object.values(state.sources).filter((s) => s.problem);
-    const errors = srcs.filter((s) => !QUIET.has(s.problem!.kind)).map((s) => `${label(s)}: ${s.problem!.message}`);
+    const errors = new Map<string, string>();
+    const stopped = new Map<string, Set<string>>();
     const quiet = new Map<string, string[]>();
-    for (const s of srcs.filter((s) => QUIET.has(s.problem!.kind))) quiet.set(s.problem!.message, [...(quiet.get(s.problem!.message) ?? []), label(s)]);
-    return { errors: errors.join(" · "), quiet: [...quiet].map(([msg, who]) => `${who.join(", ")} ${msg}`).join(" · ") };
+    for (const s of srcs) {
+      const { kind, message } = s.problem!;
+      const start = kind === "stopped" && DAEMON_START[s.harness];
+      if (start) stopped.set(start, (stopped.get(start) ?? new Set()).add(s.machine));
+      else if (QUIET.has(kind)) quiet.set(message, [...(quiet.get(message) ?? []), label(s)]);
+      // ssh's own message usually opens with the host already.
+      else if (kind === "unreachable") errors.set(s.machine, errors.get(s.machine) ?? (message.startsWith(`${s.machine}: `) ? message : `${s.machine}: ${message}`));
+      else errors.set(label(s), `${label(s)}: ${message}`);
+    }
+    return {
+      errors: [...errors.values()].join(" · "),
+      hints: [...stopped].map(([cmd, on]) => `${cmd.split(" ")[0]} not running on ${[...on].join(", ")} · start: ${cmd}`),
+      quiet: [...quiet].map(([msg, who]) => `${who.join(", ")} ${msg}`).join(" · "),
+    };
   });
+  // A source with a failure keeps its last known rows; they are drawn dim, since nothing says they still hold.
+  const stale = (s: Session) => !!state.sources[sourceKey(s.machine, s.harness)]?.problem;
+  const empty = () => ready() && !all().length;
   // Rows carry the short label (`short` host name, cut harness name); the footer has the full one.
   const host = (s: Session) => props.store.hostShort(s.machine);
   const labelWidth = createMemo(() => Math.max(0, ...view().list.map((s) => host(s).length + 1 + harnessShort(s.harness).length)) + 1);
@@ -297,7 +318,17 @@ export function SessionList(props: {
         </box>
         <text wrapMode="none" fg={colors.dim}>{ready() ? "" : "loading…"}</text>
       </box>
-      <box height={1} flexShrink={0} flexDirection="row">
+      {/* With no rows the hints are in the body instead, a line each. */}
+      <Show when={problems().errors || (problems().hints.length && !empty())}>
+        <box height={1} flexShrink={0} flexDirection="row" overflow="hidden">
+          {/* An empty text still takes a column. */}
+          <Show when={problems().errors}>
+            <text wrapMode="none" flexShrink={0} fg={colors.error}>{`${problems().errors}  `}</text>
+          </Show>
+          <text wrapMode="none" fg={colors.muted}>{empty() ? "" : problems().hints.join(" · ")}</text>
+        </box>
+      </Show>
+      <box height={1} flexShrink={0} flexDirection="row" visible={!empty()}>
         <box flexDirection="row" flexGrow={1} flexBasis={0} minWidth={0} overflow="hidden" paddingLeft={2}>
           <text wrapMode="none" flexShrink={0} fg={colors.dim}>{fit("", labelWidth()) + fit("session", cols().title) + GAP + "status"}</text>
         </box>
@@ -305,6 +336,12 @@ export function SessionList(props: {
           {cell("subs", cols().subagents, true) + cell("tok", cols().context, true) + cell("", cols().state) + cell("age", AGE_W, true)}
         </text>
       </box>
+      <Show when={empty()}>
+        <box flexShrink={0} flexDirection="column" paddingLeft={2} paddingTop={1}>
+          <text height={1} wrapMode="none" fg={colors.text}>No sessions yet · press n to start one</text>
+          <Index each={problems().hints}>{(hint) => <text height={1} wrapMode="none" fg={colors.muted}>{hint()}</text>}</Index>
+        </box>
+      </Show>
       <scrollbox ref={scroll} flexGrow={1} minHeight={0} scrollY scrollX={false} viewportCulling contentOptions={{ flexDirection: "column" }} verticalScrollbarOptions={{ visible: false }}>
         <Index each={view().items}>
           {(it) => {
@@ -322,11 +359,12 @@ export function SessionList(props: {
             const st = (): Status => s().status;
             // Red while its stop is running, and for as long as a failed stop leaves it running.
             const ending = () => stopping(s()) || stopFailed(s()) !== undefined;
-            const archived = () => archivedOf(s());
+            // Dim: archived, or last known from a source that is failing now.
+            const archived = () => archivedOf(s()) || stale(s());
             const color = () =>
               ending() ? colors.error : archived() ? colors.dim : st() === "needs" ? colors.permission : st() === "failed" ? colors.error : st() === "working" ? colors.selected : colors.muted;
             const gutter = () =>
-              stopping(s()) ? spinner() : stopFailed(s()) !== undefined ? "×" : st() === "working" ? spinner() : st() === "needs" ? "!" : st() === "failed" ? "×" : st() === "interrupted" ? "-" : active() ? "❯" : " ";
+              stopping(s()) ? spinner() : stopFailed(s()) !== undefined ? "×" : st() === "working" ? (stale(s()) ? "⠿" : spinner()) : st() === "needs" ? "!" : st() === "failed" ? "×" : st() === "interrupted" ? "-" : active() ? "❯" : " ";
             // Next to the gutter: what else is running, whichever section the row is in.
             const also = () => (s().background?.kind === "agent" ? "⑂" : s().background?.kind === "shell" ? "$" : " ");
             const statusText = () =>
@@ -388,11 +426,8 @@ export function SessionList(props: {
           {current() ? (current()!.open ? `⏎ ${current()!.open!.cmd.join(" ")}` : current()!.closedReason) : ""}
         </text>
       </box>
-      <Show when={problems().errors || problems().quiet}>
-        <box height={1} flexShrink={0} flexDirection="row" overflow="hidden">
-          <text wrapMode="none" flexShrink={0} fg={colors.error}>{problems().errors ? `${problems().errors}  ` : ""}</text>
-          <text wrapMode="none" fg={colors.dim}>{problems().quiet}</text>
-        </box>
+      <Show when={problems().quiet}>
+        <text height={1} flexShrink={0} wrapMode="none" fg={colors.dim}>{problems().quiet}</text>
       </Show>
       <box height={1} flexShrink={0} flexDirection="row">
         <Show
