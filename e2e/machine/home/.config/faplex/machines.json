@@ -1,5 +1,0 @@
-[
-  { "id": "laptop" },
-  { "id": "devbox", "ssh": "devbox", "dir": "~/src", "short": "dev" },
-  { "id": "pi", "ssh": "pi" }
-]

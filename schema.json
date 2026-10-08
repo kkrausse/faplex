@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "machines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Name shown in the list. Defaults to `ssh`, or to `local` for the entry without `ssh`."
+          },
+          "short": {
+            "type": "string",
+            "description": "Shorter name for list rows; the footer and the new-session picker keep `id`."
+          },
+          "ssh": {
+            "type": "string",
+            "description": "Alias or host from your ssh config (key auth; faplex never prompts). The entry without it is this machine."
+          },
+          "dir": {
+            "type": "string",
+            "description": "Default start directory for new sessions there (default `~`)."
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Extra PATH entries on the host. `~/.local/bin`, `~/.bun/bin` and `~/.opencode/bin` are always added."
+          },
+          "color": {
+            "type": "string",
+            "description": "Label color for the host (hex). Defaults to a palette color by position."
+          }
+        },
+        "additionalProperties": true
+      },
+      "description": "Machines to list besides this one. This machine is always listed; an entry without `ssh` names or configures it."
+    },
+    "archiveAfterHours": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "A finished session untouched for this many hours moves to Archived: how quickly Finished empties.",
+      "default": 24
+    },
+    "closeHiddenAfterMinutes": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "A session client not shown for this many minutes is closed. The agent carries on in its daemon.",
+      "default": 15
+    }
+  },
+  "additionalProperties": true,
+  "title": "faplex config",
+  "description": "~/.config/faplex/config.json. Every key is optional."
+}

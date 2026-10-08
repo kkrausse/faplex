@@ -7,7 +7,8 @@ import { Duration, Effect, Fiber, Schedule, Stream } from "effect";
 import type { Harness, Session } from "./session.ts";
 import { HARNESSES } from "./session.ts";
 import { QUIET, fail, type SourceError } from "./errors.ts";
-import { expand, home, loadMachines, localName, type Machine } from "./machines.ts";
+import type { Config } from "./config.ts";
+import { expand, home, type Machine } from "./machines.ts";
 import { claudeSessions, hostFeed, launchClaude, stopClaude } from "./claude.ts";
 import { launchOpencode, launchOpencodeMini, opencodeSessions } from "./opencode.ts";
 import { codexSessions, launchCodex } from "./codex.ts";
@@ -35,8 +36,8 @@ const retryPolicy = Schedule.exponential("1 second").pipe(
 
 export type DashStore = ReturnType<typeof createDashStore>;
 
-export function createDashStore() {
-  const machines = loadMachines();
+export function createDashStore(config: Config) {
+  const machines = config.machines;
   const [state, setState] = createStore({
     sources: Object.fromEntries(
       machines.flatMap((m) => HARNESSES.map((h) => [sourceKey(m.id, h), { machine: m.id, harness: h, rows: [], loaded: false } as Source])),
@@ -156,7 +157,7 @@ export function createDashStore() {
   };
   const archivedOf = (s: Session, now = Date.now()) => {
     const a = state.archiving[s.key];
-    return (!!a && a.failed === undefined) || isArchived(s, state.marks[s.machine], now);
+    return (!!a && a.failed === undefined) || isArchived(s, state.marks[s.machine], now, config.archiveAfterMs);
   };
 
   return {
@@ -165,8 +166,8 @@ export function createDashStore() {
     machine,
     /** Archived, counting a session that is being archived right now. */
     archivedOf,
-    /** The machine this dashboard runs on (its entry without `ssh`, else its Tailscale name). */
-    here: machines.find((m) => !m.ssh)?.id ?? localName(),
+    /** The machine this dashboard runs on: the one without `ssh`. */
+    here: machines.find((m) => !m.ssh)!.id,
     start: () => void (fiber = Effect.runFork(program)),
     /**
      * Interrupt every source (cancelling forwards). The shared ssh connections are left alone:
@@ -175,9 +176,9 @@ export function createDashStore() {
     stop: async () => {
       if (fiber) await Effect.runPromise(Fiber.interrupt(fiber).pipe(Effect.timeout("2 seconds"), Effect.ignore));
     },
-    /** The machine's name in list rows: its `short` in machines.json, else its id. */
+    /** The machine's name in list rows: its `short` in the config, else its id. */
     hostShort: (id: string) => machines.find((m) => m.id === id)?.short ?? id,
-    /** The machine's color: its `color` in machines.json, else one from the palette by config order. */
+    /** The machine's color: its `color` in the config, else one from the palette by config order. */
     hostColor: (id: string) => {
       const i = machines.findIndex((m) => m.id === id);
       return machines[i]?.color ?? HOST_COLORS[Math.max(0, i) % HOST_COLORS.length]!;

@@ -1,6 +1,6 @@
 {
   "name": "faplex",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Like `claude agents`, but for all your harnesses and all your machines: one status list for Claude Code, Codex and OpenCode sessions, each opened in its own CLI",
   "license": "MIT",
   "repository": {
@@ -9,10 +9,12 @@
   },
   "type": "module",
   "bin": {
-    "faplex": "dist/faplex.js"
+    "faplex": "bin/faplex.js"
   },
   "files": [
-    "dist/faplex.js"
+    "bin/faplex.js",
+    "dist/faplex.js",
+    "schema.json"
   ],
   "engines": {
     "bun": ">=1.3"
@@ -22,7 +24,8 @@
     "check": "tsc --noEmit",
     "build": "bun scripts/build.ts bin",
     "build:npm": "bun scripts/build.ts npm",
-    "prepublishOnly": "bun run check && bun run build:npm"
+    "schema": "bun scripts/schema.ts",
+    "prepublishOnly": "bun run check && bun run schema && bun run build:npm"
   },
   "dependencies": {
     "@opentui/core": "0.5.14"

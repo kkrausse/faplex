@@ -1,95 +1,14 @@
 // A machine is local or an SSH alias. Everything remote goes through `on` (run a command there) and
 // `forward` (reach a port or socket there), and every ssh rides one shared ControlMaster connection
 // per host, so streams, RPCs and panes cost channels, not connections.
-import { homedir, hostname, userInfo } from "node:os";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, userInfo } from "node:os";
+import { mkdirSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { Effect, Schema, Semaphore, Stream } from "effect";
+import { Effect, Semaphore, Stream } from "effect";
+import type { Machine } from "./config.ts";
 import { fail, firstLine, type SourceError } from "./errors.ts";
 
-export interface Machine {
-  readonly id: string;
-  /** Name shown in list rows instead of `id`, to keep the label column narrow. */
-  readonly short?: string;
-  /** ssh alias/host; absent for the local machine. */
-  readonly ssh?: string;
-  /** Default start directory for new sessions (remote: may start with `~`). */
-  readonly dir?: string;
-  /** Extra PATH entries on the host, ahead of the defaults. */
-  readonly path?: readonly string[];
-  /** Label color (any hex); defaults to one from the host palette. */
-  readonly color?: string;
-}
-
-const MachineSchema = Schema.Struct({
-  id: Schema.String,
-  short: Schema.optionalKey(Schema.String),
-  ssh: Schema.optionalKey(Schema.String),
-  dir: Schema.optionalKey(Schema.String),
-  path: Schema.optionalKey(Schema.Array(Schema.String)),
-  color: Schema.optionalKey(Schema.String),
-});
-
-export const CONFIG_DIR = `${homedir()}/.config/faplex`;
-const MACHINES_FILE = `${CONFIG_DIR}/machines.json`;
-
-const TAILSCALE = ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"];
-const tailscaleName = (json: string): string | undefined => {
-  const dns = JSON.parse(json)?.Self?.DNSName;
-  return typeof dns === "string" && dns ? dns.split(".")[0]! : undefined;
-};
-const NAME_FILE = `${homedir()}/.local/state/faplex/local-name`;
-let name: string | undefined;
-
-/**
- * This machine's Tailscale name (first label of its MagicDNS name), else its short hostname.
- * It is needed before anything is drawn and asking Tailscale can take seconds (up to the 3 s
- * timeout per binary), so the last answer is kept in a file: with one, startup uses it and asks
- * again in the background for next time.
- */
-export function localName(): string {
-  if (name) return name;
-  try {
-    name = readFileSync(NAME_FILE, "utf8").trim();
-  } catch {}
-  if (name) {
-    void (async () => {
-      for (const bin of TAILSCALE) {
-        try {
-          const p = Bun.spawn([bin, "status", "--self", "--json"], { stdout: "pipe", stderr: "ignore", timeout: 3000 });
-          const found = tailscaleName(await new Response(p.stdout).text());
-          if (found) return writeFileSync(NAME_FILE, found);
-        } catch {}
-      }
-    })();
-    return name;
-  }
-  for (const bin of TAILSCALE) {
-    try {
-      name = tailscaleName(Bun.spawnSync([bin, "status", "--self", "--json"], { stderr: "ignore", timeout: 3000 }).stdout.toString());
-      if (name) break;
-    } catch {}
-  }
-  name ??= hostname().split(".")[0]!;
-  try {
-    mkdirSync(`${homedir()}/.local/state/faplex`, { recursive: true });
-    writeFileSync(NAME_FILE, name);
-  } catch {}
-  return name;
-}
-
-/**
- * Read at startup; writes this machine's entry when absent. The local machine's id `"local"` shows as
- * its Tailscale name. A bad file is fatal: there is nothing to show without it.
- */
-export function loadMachines(): Machine[] {
-  if (!existsSync(MACHINES_FILE)) {
-    mkdirSync(CONFIG_DIR, { recursive: true });
-    writeFileSync(MACHINES_FILE, JSON.stringify([{ id: localName() }], null, 2) + "\n");
-  }
-  const machines = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(MachineSchema)))(readFileSync(MACHINES_FILE, "utf8"));
-  return machines.map((m) => (m.id === "local" && !m.ssh ? { ...m, id: localName() } : { ...m }));
-}
+export type { Machine };
 
 // Non-interactive ssh shells skip .bashrc, so user-installed CLIs need these on PATH.
 const DEFAULT_PATH = ["~/.local/bin", "~/.bun/bin", "~/.opencode/bin"];

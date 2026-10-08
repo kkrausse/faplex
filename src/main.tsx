@@ -9,16 +9,22 @@ import { on } from "./machines.ts";
 import { CLEAR, createModes, createShadow, isBackInput, isLeftInput, type Modes, type Shadow } from "./passthrough.ts";
 import { hasStarted, sessionKey, type Claim, type Session } from "./session.ts";
 import { colors } from "./theme.ts";
-import { command, register } from "./procs.ts";
+import { register } from "./procs.ts";
+import { hostArgs } from "./cli.ts";
+import { loadConfig, type Config } from "./config.ts";
 
-if (command(process.argv.slice(2))) process.exit(0);
+const hosts = hostArgs(process.argv.slice(2));
+let config: Config;
+try {
+  config = loadConfig(hosts);
+} catch (e) {
+  console.error(`faplex: ${e instanceof Error ? e.message : e}`);
+  process.exit(1);
+}
 register();
 
-const store = createDashStore();
+const store = createDashStore(config);
 store.start();
-
-// Hidden clients are closed after this long; the agents live on in their daemons and reopening is cheap.
-const REAP_MS = 15 * 60 * 1000;
 
 // A native CLI running in a PTY (over ssh for remote machines). While it is open the dashboard's
 // renderer is suspended and the CLI owns the real terminal: output and keys pass straight through.
@@ -145,11 +151,12 @@ function App(props: { store: DashStore }) {
     syncLive();
   }
 
-  // Close clients that haven't been on screen for REAP_MS.
+  // Hidden clients are closed after `closeHiddenAfterMinutes`; the agents live on in their daemons
+  // and reopening is cheap.
   setInterval(() => {
     const now = Date.now();
     for (const c of [...clients.values()]) {
-      if (c === view() || now - c.shownAt < REAP_MS) continue;
+      if (c === view() || now - c.shownAt < config.closeHiddenAfterMs) continue;
       if (c.exited === undefined) c.proc.kill();
       drop(c);
     }
