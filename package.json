@@ -1,6 +1,6 @@
 {
   "name": "faplex",
-  "version": "0.1.2",
+  "version": "0.1.1",
   "description": "Like `claude agents`, but for all your harnesses and all your machines: one status list for Claude Code, Codex and OpenCode sessions, each opened in its own CLI",
   "license": "MIT",
   "repository": {
@@ -25,6 +25,7 @@
     "build": "bun scripts/build.ts bin",
     "build:npm": "bun scripts/build.ts npm",
     "schema": "bun scripts/schema.ts",
+    "release": "bun scripts/release.ts",
     "prepublishOnly": "bun run check && bun run schema && bun run build:npm"
   },
   "dependencies": {
