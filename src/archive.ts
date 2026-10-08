@@ -2,7 +2,7 @@
 // on any machine sees the same state: ~/.config/faplex/archive.json, keyed by `harness:id`.
 // A number = archived at that moment (the host's clock, ms): activity after it brings the session
 // back. true = archived with no time (marks written before that). false = explicitly restored
-// (beats the 7-day rule), absent = default.
+// (beats the age rule), absent = default.
 import { Effect, Schema } from "effect";
 import { decodeJson, fail } from "./errors.ts";
 import { sh, type Machine } from "./machines.ts";
@@ -37,18 +37,17 @@ export const setMark = (m: Machine, key: string, archived: boolean) =>
     return marks;
   });
 
-const WEEK = 7 * 24 * 3600 * 1000;
 // Stopping a session touches it once more just after the mark is written; that is not new activity.
 const SETTLE = 30_000;
 
 /**
  * Harness archive, a dashboard mark with nothing happening since, or finished and untouched for
- * 7 days (unless explicitly restored).
+ * `after` ms (`archiveAfterHours` in the config) unless explicitly restored.
  */
-export function isArchived(s: Session, marks: Marks | undefined, now: number): boolean {
+export function isArchived(s: Session, marks: Marks | undefined, now: number, after: number): boolean {
   const mark = marks?.[markKey(s)];
   if (s.archived || mark === true) return true;
   if (typeof mark === "number" && s.updatedAt <= mark + SETTLE) return true;
   if (mark === false || s.status === "needs" || s.status === "working") return false;
-  return now - s.updatedAt > WEEK;
+  return now - s.updatedAt > after;
 }
