@@ -64,8 +64,17 @@ const matches = (c: NonNullable<Client["claim"]>, ref: Session, s: Session) =>
 // host shares one connection.
 const SSH_REFUSED = /administratively prohibited|open failed|session request failed|Session open refused/i;
 
+// What a terminal shows on its tab. The leading glyph is the only "icon" a terminal tab has: it is
+// how a harness marks its own tabs, and what a web terminal can key a favicon on.
+const TITLE = "⧉ faplex";
+// XTWINOPS title stack: the title the tab had before comes back on quit, where it is supported.
+const PUSH_TITLE = "\x1b[22;0t";
+const POP_TITLE = "\x1b]0;\x07\x1b[23;0t";
+
 function App(props: { store: DashStore }) {
   const renderer = useRenderer();
+  process.stdout.write(PUSH_TITLE);
+  renderer.setTerminalTitle(TITLE);
   const clients = new Map<string, Client>();
   // equals:false so re-setting the same client after a claim refreshes it.
   const [view, setView] = createSignal<Client | undefined>(undefined, { equals: false });
@@ -120,6 +129,8 @@ function App(props: { store: DashStore }) {
       // Hidden clients sit one row short, so reopening is a real resize and the CLI repaints.
       if (prev.exited === undefined) fit(prev, Math.max(1, size().rows - 1));
       renderer.resume();
+      // The harness put its own title on the tab.
+      renderer.setTerminalTitle(TITLE);
     }
     setView(c);
     if (!c) return;
@@ -310,6 +321,7 @@ function App(props: { store: DashStore }) {
       // Clients only; every agent lives on in its own daemon.
       for (const c of clients.values()) c.proc.kill();
       renderer.destroy();
+      process.stdout.write(POP_TITLE);
       await props.store.stop();
     } finally {
       process.exit(0);
