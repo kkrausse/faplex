@@ -46,9 +46,9 @@ step "faplex · agent sessions on 3 machines, over ssh"
 rest 0.9
 
 # 1. A new Codex session on laptop; once prompted it is a Working row.
-step "n new session · → → codex on laptop · ⏎"
+step "n new session · → → → codex on laptop · ⏎"
 key text:n; see "New session"
-rest 0.35; key right; rest 0.25; key right; rest 0.4
+rest 0.35; key right; rest 0.25; key right; rest 0.25; key right; rest 0.4
 key enter
 see "Ask Codex"
 rest 0.3
