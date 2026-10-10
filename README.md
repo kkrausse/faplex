@@ -9,9 +9,8 @@ sessions you already have, on every machine you can `ssh` to. Fake because it mu
 nothing. The harnesses keep their own sessions running; faplex reads what they report and
 opens the harness's own CLI on the row you pick.
 
-> **Early alpha.** faplex is new and rough around the edges: expect bugs, and expect things to
-> change between versions. It can't hurt your sessions (it holds nothing they depend on), but it
-> can misbehave. Issues are welcome.
+> **Early alpha:** expect rough edges. Your sessions live in the harnesses, not in faplex, so a
+> faplex bug or crash doesn't take them down.
 
 - **One grouped, prioritized, real-time list.** Working, Needs input, Finished, across every
   machine and harness, with context tokens and subagent counts.
