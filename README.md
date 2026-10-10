@@ -162,7 +162,9 @@ The conversation is kept either way; opening the session resumes it and takes it
 `faplex kill` stops those (`faplex kill all` stops every one). Sessions are not affected.
 
 New session: ↑↓ machine · ←→ harness · tab edit start dir · ⏎ open · esc back.
-Combinations whose harness is missing or unsupported are greyed out.
+Combinations whose harness is missing or unsupported are greyed out. The picker opens on the
+machine and harness of the last session you started, remembered across runs
+(`~/.local/state/faplex/last-pick.json`).
 
 In an open session, go back to the list with:
 

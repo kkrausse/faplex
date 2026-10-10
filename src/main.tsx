@@ -4,6 +4,7 @@ import { render, useRenderer } from "@opentui/solid";
 import { Show, createEffect, createSignal } from "solid-js";
 import { createDashStore, type DashStore, type Launch } from "./store.ts";
 import { NewSession, type Pick } from "./new-session.tsx";
+import { loadLastPick, saveLastPick } from "./last-pick.ts";
 import { SessionList } from "./list.tsx";
 import { on } from "./machines.ts";
 import { remoteDrops } from "./drop.ts";
@@ -89,7 +90,8 @@ function App(props: { store: DashStore }) {
   // equals:false so re-setting the same client after a claim refreshes it.
   const [view, setView] = createSignal<Client | undefined>(undefined, { equals: false });
   const [screen, setScreen] = createSignal<"list" | "new">("list");
-  const [lastPick, setLastPick] = createSignal<Pick>();
+  // Where the picker opens: the last machine × harness a new session was started on, in any dashboard.
+  const [lastPick, setLastPick] = createSignal<Pick | undefined>(loadLastPick());
   const [live, setLive] = createSignal<ReadonlySet<string>>(new Set());
   const [freshKeys, setFreshKeys] = createSignal<ReadonlySet<string>>(new Set());
   // Used new chats whose session hasn't been reported yet.
@@ -271,6 +273,8 @@ function App(props: { store: DashStore }) {
 
   async function pick(p: Pick, dir: string) {
     const cached = cachedFresh(p);
+    setLastPick(p);
+    saveLastPick(p);
     if (cached) {
       setScreen("list");
       show(cached);
