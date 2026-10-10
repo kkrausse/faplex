@@ -1,6 +1,6 @@
 # faplex
 
-Like `claude agents` across all hosts and harnesses.
+Like `claude agents`, but for all your harnesses and all your machines.
 
 ![faplex demo](docs/demo.gif)
 
