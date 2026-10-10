@@ -4,7 +4,7 @@ import { render, useRenderer } from "@opentui/solid";
 import { Show, createEffect, createSignal } from "solid-js";
 import { createDashStore, type DashStore, type Launch } from "./store.ts";
 import { NewSession, type Pick } from "./new-session.tsx";
-import { loadLastPick, saveLastPick } from "./last-pick.ts";
+import { dirKey, loadRemembered, remember } from "./last-pick.ts";
 import { SessionList } from "./list.tsx";
 import { on } from "./machines.ts";
 import { remoteDrops } from "./drop.ts";
@@ -91,7 +91,7 @@ function App(props: { store: DashStore }) {
   const [view, setView] = createSignal<Client | undefined>(undefined, { equals: false });
   const [screen, setScreen] = createSignal<"list" | "new">("list");
   // Where the picker opens: the last machine × harness a new session was started on, in any dashboard.
-  const [lastPick, setLastPick] = createSignal<Pick | undefined>(loadLastPick());
+  const [lastPick, setLastPick] = createSignal<Pick | undefined>(loadRemembered().pick);
   const [live, setLive] = createSignal<ReadonlySet<string>>(new Set());
   const [freshKeys, setFreshKeys] = createSignal<ReadonlySet<string>>(new Set());
   // Used new chats whose session hasn't been reported yet.
@@ -103,7 +103,8 @@ function App(props: { store: DashStore }) {
     const alive = [...clients.values()].filter((c) => c.exited === undefined);
     setLive(new Set(alive.map((c) => c.session.key)));
     setFreshKeys(new Set(alive.filter((c) => c.fresh).map((c) => c.session.key)));
-    setPending(alive.filter((c) => c.claim && !c.fresh).map((c) => c.session));
+    // One that died before its session turned up keeps its row, so the failure can be opened and read.
+    setPending([...clients.values()].filter((c) => c.claim && !c.fresh && c.exited !== 0).map((c) => c.session));
   };
   const cachedFresh = (p: Pick) =>
     [...clients.values()].find((c) => c.fresh?.machine === p.machine && c.fresh.harness === p.harness && c.exited === undefined);
@@ -248,6 +249,10 @@ function App(props: { store: DashStore }) {
         // The CLI may have died with its modes still on.
         if (view() === c) process.stdout.write(`${c.modes.undo()}\r\n\x1b[33m[faplex] ${c.note} · ctrl+] or ← to go back\x1b[0m\r\n`);
         c.modes.clear();
+        if (c.claim) {
+          c.session = { ...c.session, status: "failed", detail: c.note };
+          syncLive();
+        }
       }
     });
     clients.set(s.key, c);
@@ -271,46 +276,61 @@ function App(props: { store: DashStore }) {
     open(s);
   }
 
-  async function pick(p: Pick, dir: string) {
-    const cached = cachedFresh(p);
+  // A session started on a prompt needs nobody watching, so it opens no pane: its client runs
+  // hidden and its row shows on the list. Without a prompt the new chat opens, as an unused one.
+  async function pick(p: Pick, dir: string, prompt?: string) {
     setLastPick(p);
-    saveLastPick(p);
+    remember(p, dirKey(p.machine, !!props.store.machine(p.machine).ssh), dir);
+    const cached = prompt ? undefined : cachedFresh(p);
     if (cached) {
       setScreen("list");
       show(cached);
       return;
     }
     const known = new Set(props.store.rows(p.harness).filter((s) => s.machine === p.machine).map((s) => s.key));
-    const l = await props.store.launch(p.machine, p.harness, dir);
-    const c = spawn(placeholder(p, l));
-    c.fresh = p;
-    if ("trust" in l) awaitTrust(c, p, dir, known);
+    const l = await props.store.launch(p.machine, p.harness, dir, prompt);
+    const c = spawn(placeholder(p, l, prompt));
+    if (!prompt || "trust" in l) c.fresh = p;
+    if ("trust" in l) awaitTrust(c, p, dir, known, prompt);
     else c.claim = { claim: l.claim, known };
     syncLive();
     setScreen("list");
-    show(c);
+    // The trust prompt has to be answered on screen.
+    if (!prompt || "trust" in l) return show(c);
+    awaitStart(c);
+    props.store.refresh(p.machine);
+    setMount({ n: mount().n + 1, selected: c.session.key, flash: undefined });
   }
-  const placeholder = (p: Pick, l: Launch): Session => ({
-    machine: p.machine, harness: p.harness, key: sessionKey(p.machine, p.harness, `new-${Date.now()}`), id: "", title: `new ${p.harness} session`,
+  // A hidden client whose session never turns up is waiting on something only its pane shows (a
+  // trust or login prompt, a failed start), so its row asks to be opened.
+  function awaitStart(c: Client) {
+    setTimeout(() => {
+      if (!c.claim || c.exited !== undefined || view() === c || clients.get(c.session.key) !== c) return;
+      c.session = { ...c.session, status: "needs", detail: "not started yet · open it to see why" };
+      syncLive();
+    }, 12_000);
+  }
+  const placeholder = (p: Pick, l: Launch, prompt?: string): Session => ({
+    machine: p.machine, harness: p.harness, key: sessionKey(p.machine, p.harness, `new-${Date.now()}`), id: "", title: prompt ?? `new ${p.harness} session`,
     cwd: l.cwd, status: "working", detail: "", model: "", updatedAt: Date.now(), archived: false, stoppable: false, open: { cmd: l.cmd, cwd: l.cwd },
   });
 
   // `c` shows the harness's trust prompt for an untrusted folder. Once the prompt is accepted the
   // launch goes through, and the pane is swapped for the session it was meant to open. Only tried
   // while the pane is on screen: that is when the prompt can be answered.
-  function awaitTrust(c: Client, p: Pick, dir: string, known: ReadonlySet<string>) {
+  function awaitTrust(c: Client, p: Pick, dir: string, known: ReadonlySet<string>, prompt?: string) {
     let trying = false;
     const timer = setInterval(async () => {
       if (c.exited !== undefined || clients.get(c.session.key) !== c) return clearInterval(timer);
       if (trying || view() !== c) return;
       trying = true;
       try {
-        const l = await props.store.launch(p.machine, p.harness, dir);
+        const l = await props.store.launch(p.machine, p.harness, dir, prompt);
         if ("trust" in l || c.exited !== undefined || clients.get(c.session.key) !== c) return;
         clearInterval(timer);
-        const next = spawn(placeholder(p, l));
+        const next = spawn(placeholder(p, l, prompt));
         next.claim = { claim: l.claim, known };
-        next.fresh = p;
+        if (!prompt) next.fresh = p;
         const shown = view() === c;
         drop(c);
         if (shown) show(next);

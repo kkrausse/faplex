@@ -1,9 +1,12 @@
-// New session: pick a machine (rows) and harness (columns) and a start directory; the harness opens
-// its own new chat there. Combinations whose harness is missing or unsupported are greyed out.
+// New session: pick a machine (rows) and harness (columns) and a start directory, and optionally
+// type a first prompt. With a prompt the session starts on it and the list comes back; without
+// one the harness opens its own new chat. Combinations whose harness is missing or unsupported are
+// greyed out. The choice and each machine's directory are remembered (last-pick.ts).
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard } from "@opentui/solid";
 import { For, Show, createSignal } from "solid-js";
 import type { Harness } from "./session.ts";
+import { dirKey, loadRemembered } from "./last-pick.ts";
 import { sourceKey, type DashStore } from "./store.ts";
 import { colors, providerColor, spinner } from "./theme.ts";
 
@@ -16,17 +19,19 @@ export function NewSession(props: {
   /** Combinations with an unused new chat ready to reopen. */
   cached: (p: Pick) => boolean;
   onCancel: () => void;
-  onPick: (p: Pick, dir: string) => Promise<void>;
+  onPick: (p: Pick, dir: string, prompt?: string) => Promise<void>;
 }) {
   const machines = props.store.machines;
   const harnesses = props.store.harnesses;
   const localDir = process.cwd();
+  const remembered = loadRemembered().dirs;
   const [mi, setMi] = createSignal(Math.max(0, machines.findIndex((m) => m.id === props.initial?.machine)));
   const [hi, setHi] = createSignal(Math.max(0, harnesses.indexOf(props.initial?.harness!)));
-  // Directory per machine; edits stick while the picker is open.
   const [dirs, setDirs] = createSignal<Record<string, string>>(
-    Object.fromEntries(machines.map((m) => [m.id, m.ssh ? (m.dir ?? "~") : localDir])),
+    Object.fromEntries(machines.map((m) => [m.id, remembered[dirKey(m.id, !!m.ssh)] ?? (m.ssh ? (m.dir ?? "~") : localDir)])),
   );
+  // Typing goes to the prompt, so the grid is moved with the arrows only.
+  const [prompt, setPrompt] = createSignal("");
   const [editing, setEditing] = createSignal(false);
   const [starting, setStarting] = createSignal(false);
   const [error, setError] = createSignal("");
@@ -45,7 +50,7 @@ export function NewSession(props: {
     setStarting(true);
     setError("");
     try {
-      await props.onPick(p, dir());
+      await props.onPick(p, dir(), prompt().trim() || undefined);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -55,23 +60,26 @@ export function NewSession(props: {
   useKeyboard((key) => {
     if (!props.active() || key.defaultPrevented || starting()) return;
     if (editing()) {
-      if (key.name === "escape" || key.name === "tab") setEditing(false);
-      else if (key.name === "return") {
+      if (key.name === "escape" || key.name === "tab") {
+        key.preventDefault();
+        setEditing(false);
+      } else if (key.name === "return") {
         setEditing(false);
         start();
       }
       return;
     }
     const n = machines.length;
-    if (key.name === "up" || key.name === "k") setMi((i) => (i + n - 1) % n);
-    else if (key.name === "down" || key.name === "j") setMi((i) => (i + 1) % n);
-    else if (key.name === "right" || key.name === "l") setHi((i) => Math.min(harnesses.length - 1, i + 1));
-    else if (key.name === "left" || key.name === "h") hi() === 0 ? props.onCancel() : setHi((i) => i - 1);
-    else if (key.name === "tab" || key.name === "e") {
-      key.preventDefault();
-      setEditing(true);
-    } else if (key.name === "return") start();
-    else if (key.name === "escape" || key.name === "q") props.onCancel();
+    // Keys taken here are kept from the prompt's input.
+    const take = () => key.preventDefault();
+    if (key.name === "up") take(), setMi((i) => (i + n - 1) % n);
+    else if (key.name === "down") take(), setMi((i) => (i + 1) % n);
+    // With text in the prompt, ← → move its cursor instead.
+    else if (key.name === "right" && !prompt()) take(), setHi((i) => Math.min(harnesses.length - 1, i + 1));
+    else if (key.name === "left" && !prompt()) take(), hi() === 0 ? props.onCancel() : setHi((i) => i - 1);
+    else if (key.name === "tab") take(), setEditing(true);
+    else if (key.name === "return") take(), start();
+    else if (key.name === "escape") take(), prompt() ? setPrompt("") : props.onCancel();
   });
 
   const width = Math.max(...machines.map((m) => m.id.length)) + 2;
@@ -118,6 +126,23 @@ export function NewSession(props: {
           />
         </Show>
       </box>
+      <box height={1} />
+      <box height={1} flexDirection="row">
+        <text fg={editing() ? colors.muted : colors.selected}>{"❯ "}</text>
+        <Show when={!editing()} fallback={<text fg={colors.dim}>{prompt()}</text>}>
+          <input
+            // Focused a tick late, or the key that opened the picker would be typed into it.
+            ref={(el: { focus: () => void }) => queueMicrotask(() => el.focus())}
+            flexGrow={1}
+            value={prompt()}
+            onInput={(v: string) => setPrompt(v)}
+            placeholder="type a first prompt, or ⏎ for an empty chat"
+            focusedBackgroundColor={colors.bg}
+            backgroundColor={colors.bg}
+            textColor={colors.text}
+          />
+        </Show>
+      </box>
       <Show when={problem(pick())}>
         <text height={1} fg={colors.dim}>{`${pick().machine}·${pick().harness}: ${problem(pick())!.message}`}</text>
       </Show>
@@ -130,7 +155,9 @@ export function NewSession(props: {
           ? `${spinner()} starting ${pick().harness} on ${pick().machine}…`
           : editing()
             ? "⏎ start here · esc/tab done"
-            : "↑↓ machine · ←→ harness · tab edit dir · ⏎ open a new chat · esc back"}
+            : prompt()
+              ? "⏎ start it on this prompt · ↑↓ machine · tab edit dir · esc clear"
+              : "↑↓ machine · ←→ harness · tab edit dir · ⏎ open a new chat · esc back"}
       </text>
     </box>
   );

@@ -59,7 +59,7 @@ describe("Mini launch through the host CLI", () => {
 printf '%s' "$5" > "$(dirname "$0")/body"
 printf '%s\\n' '{"data":{"id":"ses_created"}}'`);
     const dir = "/project's folder/$(not-a-command)";
-    const launch = await Effect.runPromise(launchOpencodeMini({ id: "test" }, dir, run));
+    const launch = await Effect.runPromise(launchOpencodeMini({ id: "test" }, dir, undefined, run));
     expect(JSON.parse(readFileSync(`${tmp}/body`, "utf8"))).toEqual({ location: { directory: dir }, metadata: MINI_METADATA });
     expect(launch).toEqual({ cmd: ["opencode", "mini", "-s", "ses_created"], cwd: dir, claim: { id: "ses_created" } });
   });
@@ -67,7 +67,7 @@ printf '%s\\n' '{"data":{"id":"ses_created"}}'`);
   test("an unavailable Mini fails before creating a session", async () => {
     cli(`if [ "$1" = mini ]; then echo 'mini unavailable' >&2; exit 1; fi
 touch "$(dirname "$0")/created"`);
-    const result = await Effect.runPromise(launchOpencodeMini({ id: "test" }, "/project", run).pipe(Effect.result));
+    const result = await Effect.runPromise(launchOpencodeMini({ id: "test" }, "/project", undefined, run).pipe(Effect.result));
     expect(result._tag).toBe("Failure");
     expect(() => readFileSync(`${tmp}/created`)).toThrow();
   });
@@ -75,8 +75,8 @@ touch "$(dirname "$0")/created"`);
   test("API failures and malformed responses do not launch a client", async () => {
     cli(`if [ "$1" = mini ]; then exit 0; fi
 echo 'create failed' >&2; exit 1`);
-    expect((await Effect.runPromise(launchOpencodeMini({ id: "test" }, "/project", run).pipe(Effect.result)))._tag).toBe("Failure");
+    expect((await Effect.runPromise(launchOpencodeMini({ id: "test" }, "/project", undefined, run).pipe(Effect.result)))._tag).toBe("Failure");
     writeFileSync(`${tmp}/opencode`, `#!/bin/sh\nif [ "$1" = mini ]; then exit 0; fi\necho '{}'\n`, { mode: 0o700 });
-    expect((await Effect.runPromise(launchOpencodeMini({ id: "test" }, "/project", run).pipe(Effect.result)))._tag).toBe("Failure");
+    expect((await Effect.runPromise(launchOpencodeMini({ id: "test" }, "/project", undefined, run).pipe(Effect.result)))._tag).toBe("Failure");
   });
 });

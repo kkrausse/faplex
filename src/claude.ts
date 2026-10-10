@@ -261,10 +261,10 @@ export const claudeSessions = (m: Machine, rec: HostRecord): Effect.Effect<Sessi
     );
   });
 
-/** An idle background session ("send a prompt to start"), so it stays attachable. */
-export const launchClaude = (m: Machine, dir: string) =>
+/** A background session, so it stays attachable: idle ("send a prompt to start"), or working on `prompt`. */
+export const launchClaude = (m: Machine, dir: string, prompt?: string) =>
   Effect.gen(function* () {
-    const out = yield* exec(m, ["claude", "--bg"], { cwd: dir, timeout: 60_000 }).pipe(Effect.map((o) => o.stdout + o.stderr));
+    const out = yield* exec(m, ["claude", "--bg", ...(prompt ? [prompt] : [])], { cwd: dir, timeout: 60_000 }).pipe(Effect.map((o) => o.stdout + o.stderr));
     // `claude --bg` refuses a folder that was never trusted; the prompt only comes up in the plain CLI.
     if (/Workspace not trusted/.test(out)) return { cmd: ["claude"], cwd: dir, trust: true as const };
     const id = out.replace(/\x1b\[[0-9;]*m/g, "").match(/backgrounded · (\w+)/)?.[1];

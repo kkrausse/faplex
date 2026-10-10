@@ -223,11 +223,12 @@ export function createDashStore(config: Config) {
       setState("archiving", s.key, undefined!);
       mark(s, false).catch(() => {});
     },
-    launch: (machineId: string, h: Harness, dir: string): Promise<Launch> => {
+    /** With `prompt`, the session starts on it instead of waiting at an empty one. */
+    launch: (machineId: string, h: Harness, dir: string, prompt?: string): Promise<Launch> => {
       const m = machine(machineId);
       return Effect.runPromise(
         expand(m, dir).pipe(
-          Effect.flatMap((d): Effect.Effect<Launch, SourceError> => (h === "claude" ? launchClaude(m, d) : h === "opencode" ? launchOpencode(d) : h === "opencode-mini" ? launchOpencodeMini(m, d) : launchCodex(d))),
+          Effect.flatMap((d): Effect.Effect<Launch, SourceError> => (h === "claude" ? launchClaude(m, d, prompt) : h === "opencode" ? launchOpencode(d, prompt) : h === "opencode-mini" ? launchOpencodeMini(m, d, prompt) : launchCodex(d, prompt))),
         ),
       );
     },

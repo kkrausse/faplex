@@ -163,8 +163,15 @@ The conversation is kept either way; opening the session resumes it and takes it
 
 New session: ↑↓ machine · ←→ harness · tab edit start dir · ⏎ open · esc back.
 Combinations whose harness is missing or unsupported are greyed out. The picker opens on the
-machine and harness of the last session you started, remembered across runs
-(`~/.local/state/faplex/last-pick.json`).
+machine and harness of the last session you started, and on the start dir last used on that
+machine, remembered across runs (`~/.local/state/faplex/last-pick.json`; on this machine the dir
+is remembered per directory faplex was started in).
+
+Typing in the picker goes to the prompt line at the bottom. ⏎ with a prompt starts the session on
+it and returns to the list, where its row appears; ⏎ with none opens an empty chat. With text
+typed, ← → move in the text and esc clears it. A session whose harness hasn't registered it after
+a few seconds (a trust or login prompt is waiting in its pane) is listed under Needs input: open
+it to answer.
 
 In an open session, go back to the list with:
 

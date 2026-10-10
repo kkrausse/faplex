@@ -145,4 +145,4 @@ export const codexSessions = (m: Machine, setStop: (stop: ((id: string) => Effec
     }),
   );
 
-export const launchCodex = (dir: string) => Effect.succeed({ cmd: ["codex", "-C", dir], cwd: dir, claim: { firstNewIn: dir } });
+export const launchCodex = (dir: string, prompt?: string) => Effect.succeed({ cmd: ["codex", "-C", dir, ...(prompt ? [prompt] : [])], cwd: dir, claim: { firstNewIn: dir } });

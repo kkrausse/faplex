@@ -245,10 +245,11 @@ export const opencodeSessions = (m: Machine, home: string, setStop: (stop: ((id:
     }),
   );
 
-export const launchOpencode = (dir: string) => Effect.succeed({ cmd: ["opencode", dir], cwd: dir, claim: { firstNewIn: dir } });
+const first = (prompt?: string) => (prompt ? ["--prompt", prompt] : []);
+export const launchOpencode = (dir: string, prompt?: string) => Effect.succeed({ cmd: ["opencode", dir, ...first(prompt)], cwd: dir, claim: { firstNewIn: dir } });
 
 const Created = decodeJson(Schema.Struct({ data: Schema.Struct({ id: Schema.String }) }), "opencode create session");
-export const launchOpencodeMini = (m: Machine, dir: string, run: typeof sh = sh) =>
+export const launchOpencodeMini = (m: Machine, dir: string, prompt?: string, run: typeof sh = sh) =>
   Effect.gen(function* () {
     // Create with metadata atomically, then claim by ID instead of guessing among
     // concurrent new sessions. `api` discovers/starts the same service as the CLI.
@@ -256,5 +257,5 @@ export const launchOpencodeMini = (m: Machine, dir: string, run: typeof sh = sh)
     const out = yield* run(m, `opencode mini --help >/dev/null && opencode api post /api/session --data ${q(body)}`);
     if (out.code !== 0) return yield* fail("failed", firstLine(out.stderr) || `opencode mini launch exited ${out.code}`);
     const { data: { id } } = yield* Created(out.stdout);
-    return { cmd: opencodeCommand(id, true), cwd: dir, claim: { id } };
+    return { cmd: [...opencodeCommand(id, true), ...first(prompt)], cwd: dir, claim: { id } };
   });

@@ -153,7 +153,12 @@ activity also confirms a chat has started. Claiming a session ID does not.
 The source confirms the first prompt; pressing Enter in a model picker is not
 enough. "Back" from a new chat always goes to the list, prompted or not: the keys cannot say
 whether a prompt went in (a paste delivers text and Enter as one chunk), and the source may take
-a moment to report it. `n` reopens the picker on an unused one. Known drafts stay hidden even after their client is closed; nothing is
+a moment to report it. `n` reopens the picker on an unused one. A new session
+given a first prompt in the picker is never a draft: the prompt is a launch argument (`claude --bg
+<prompt>`, `codex -C <dir> <prompt>`, `opencode <dir> --prompt <prompt>`), its client starts hidden
+and its placeholder row is listed until the source reports the session. A hidden client still
+unclaimed after 12 s is waiting on something only its pane shows (Codex's folder trust prompt), so
+the placeholder turns `needs`; one that exits non-zero turns `failed` and keeps its row. Known drafts stay hidden even after their client is closed; nothing is
 deleted or archived.
 
 ### Optional metrics
