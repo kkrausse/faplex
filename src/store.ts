@@ -38,9 +38,11 @@ export type DashStore = ReturnType<typeof createDashStore>;
 
 export function createDashStore(config: Config) {
   const machines = config.machines;
+  // OpenCode Mini is opt-in (`opencodeMini`): without it there is no Mini choice and no `ocm` row.
+  const harnesses = HARNESSES.filter((h) => h !== "opencode-mini" || config.opencodeMini);
   const [state, setState] = createStore({
     sources: Object.fromEntries(
-      machines.flatMap((m) => HARNESSES.map((h) => [sourceKey(m.id, h), { machine: m.id, harness: h, rows: [], loaded: false } as Source])),
+      machines.flatMap((m) => harnesses.map((h) => [sourceKey(m.id, h), { machine: m.id, harness: h, rows: [], loaded: false } as Source])),
     ) as Record<string, Source>,
     marks: {} as Record<string, Marks>,
     // Sessions being stopped and archived right now, and the ones whose stop failed. A row counts
@@ -112,11 +114,11 @@ export function createDashStore(config: Config) {
 
   // One backend connection feeds both UI choices; never list the same session twice.
   const opencode = (m: Machine) => {
-    const harnesses = ["opencode", "opencode-mini"] as const;
-    const keys = harnesses.map((h) => sourceKey(m.id, h));
+    const kinds = harnesses.filter((h) => h === "opencode" || h === "opencode-mini");
+    const keys = kinds.map((h) => sourceKey(m.id, h));
     const setStops = (f: Parameters<ReturnType<typeof setStop>>[0]) => keys.forEach((k) => setStop(k)(f));
-    return supervise(keys, Stream.unwrap(home(m).pipe(Effect.map((h) => opencodeSessions(m, h, setStops)))).pipe(
-      Stream.runForEach((rows) => Effect.forEach(harnesses, (h) => setRows(sourceKey(m.id, h), rows.filter((s) => s.harness === h)), { discard: true })),
+    return supervise(keys, Stream.unwrap(home(m).pipe(Effect.map((h) => opencodeSessions(m, h, setStops, config.opencodeMini)))).pipe(
+      Stream.runForEach((rows) => Effect.forEach(kinds, (h) => setRows(sourceKey(m.id, h), rows.filter((s) => s.harness === h)), { discard: true })),
     ));
   };
 
@@ -163,6 +165,7 @@ export function createDashStore(config: Config) {
   return {
     state,
     machines,
+    harnesses,
     machine,
     /** Archived, counting a session that is being archived right now. */
     archivedOf,

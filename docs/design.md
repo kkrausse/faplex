@@ -98,7 +98,8 @@ pid on that host. CLI missing → not installed; CLI 1.x → unsupported (differ
 API); no file or dead pid → not running (stale). Then `forward` to the host:port
 the url names (a service may bind a non-loopback address, e.g. its Tailscale one).
 
-OpenCode and OpenCode Mini are separate picker/list identities (`oc` / `ocm`) backed
+With `opencodeMini` on (it is off by default, and then Mini does not exist as far as the
+dashboard goes), OpenCode and OpenCode Mini are separate picker/list identities (`oc` / `ocm`) backed
 by one stream and stop connection per machine. Mini launches create a session through
 `opencode api` with metadata `faplex.interface: mini`, then attach via
 `opencode mini -s <id>` with that directory as cwd. The metadata selects the row's

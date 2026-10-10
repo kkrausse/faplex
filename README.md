@@ -88,7 +88,8 @@ To keep them, `~/.config/faplex/config.json`, every key optional:
   ],
   "archiveAfterHours": 24,
   "closeHiddenAfterMinutes": 15,
-  "uploadDrops": false
+  "uploadDrops": false,
+  "opencodeMini": false
 }
 ```
 
@@ -108,6 +109,8 @@ To keep them, `~/.config/faplex/config.json`, every key optional:
 - `uploadDrops` (default false): with a remote session open, a pasted or dropped path to a local
   file is copied to the remote machine's temp directory, and the path there is typed instead.
   See [Keys](#keys).
+- `opencodeMini` (default false): offer OpenCode Mini as its own choice in the new-session
+  picker. See [Providers](#providers).
 
 `$schema` gives editors completion and checking. A file that doesn't fit stops faplex at
 startup with the path and the field. An older `machines.json` (just the `machines` array) is
@@ -201,12 +204,13 @@ What a harness needs to appear here, per machine:
 | OpenCode Mini | same OpenCode service and live updates | `opencode mini -s <id>` | create a tagged session, then `opencode mini -s <id>` in the chosen directory | same OpenCode interrupt |
 | Codex | app-server daemon, WebSocket over `~/.codex/app-server-control/app-server-control.sock`, re-read on thread notifications | `codex resume <id>` | `codex -C <dir>` | `turn/interrupt` on the in-progress turn |
 
-The new-session picker offers `opencode` and `opencode-mini` separately; list rows show
-`oc` and `ocm`. Mini is the minimal, scrollback-style interface shipped in the same
+OpenCode Mini is opt-in (`opencodeMini` in the config). With it on, the new-session picker
+offers `opencode` and `opencode-mini` separately; list rows show `oc` and `ocm`. Mini is the minimal, scrollback-style interface shipped in the same
 OpenCode executable, so it updates with OpenCode. Faplex stores the Mini choice in
 session metadata (`faplex.interface: mini`), preserving it across dashboard restarts
 and machines. Both choices share one status connection and each session appears only
-once. Untagged sessions, including ones started outside faplex, default to `oc`.
+once. Untagged sessions, including ones started outside faplex, default to `oc`. With
+`opencodeMini` off there is no Mini choice and every OpenCode session is an `oc` row.
 
 Remote OpenCode ports and Codex sockets are forwarded over the shared ssh connection.
 OpenCode 1.x and Claude Code without `agents --json` show as unsupported.

@@ -58,6 +58,11 @@
       "type": "boolean",
       "description": "With a remote session open, a pasted or dropped path to a local file is copied to the remote machine's temp directory and the path there is typed instead.",
       "default": false
+    },
+    "opencodeMini": {
+      "type": "boolean",
+      "description": "Offer OpenCode Mini (`opencode mini`, the scrollback-style interface) as its own choice in the new-session picker, and open sessions started that way in Mini.",
+      "default": false
     }
   },
   "additionalProperties": true,

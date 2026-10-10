@@ -3,7 +3,7 @@
 import { TextAttributes } from "@opentui/core";
 import { useKeyboard } from "@opentui/solid";
 import { For, Show, createSignal } from "solid-js";
-import { HARNESSES, type Harness } from "./session.ts";
+import type { Harness } from "./session.ts";
 import { sourceKey, type DashStore } from "./store.ts";
 import { colors, providerColor, spinner } from "./theme.ts";
 
@@ -19,9 +19,10 @@ export function NewSession(props: {
   onPick: (p: Pick, dir: string) => Promise<void>;
 }) {
   const machines = props.store.machines;
+  const harnesses = props.store.harnesses;
   const localDir = process.cwd();
   const [mi, setMi] = createSignal(Math.max(0, machines.findIndex((m) => m.id === props.initial?.machine)));
-  const [hi, setHi] = createSignal(Math.max(0, HARNESSES.indexOf(props.initial?.harness!)));
+  const [hi, setHi] = createSignal(Math.max(0, harnesses.indexOf(props.initial?.harness!)));
   // Directory per machine; edits stick while the picker is open.
   const [dirs, setDirs] = createSignal<Record<string, string>>(
     Object.fromEntries(machines.map((m) => [m.id, m.ssh ? (m.dir ?? "~") : localDir])),
@@ -30,7 +31,7 @@ export function NewSession(props: {
   const [starting, setStarting] = createSignal(false);
   const [error, setError] = createSignal("");
 
-  const pick = (): Pick => ({ machine: machines[mi()]!.id, harness: HARNESSES[hi()]! });
+  const pick = (): Pick => ({ machine: machines[mi()]!.id, harness: harnesses[hi()]! });
   const problem = (p: Pick) => props.store.state.sources[sourceKey(p.machine, p.harness)]?.problem;
   const unavailable = (p: Pick) => {
     const k = problem(p)?.kind;
@@ -64,7 +65,7 @@ export function NewSession(props: {
     const n = machines.length;
     if (key.name === "up" || key.name === "k") setMi((i) => (i + n - 1) % n);
     else if (key.name === "down" || key.name === "j") setMi((i) => (i + 1) % n);
-    else if (key.name === "right" || key.name === "l") setHi((i) => Math.min(HARNESSES.length - 1, i + 1));
+    else if (key.name === "right" || key.name === "l") setHi((i) => Math.min(harnesses.length - 1, i + 1));
     else if (key.name === "left" || key.name === "h") hi() === 0 ? props.onCancel() : setHi((i) => i - 1);
     else if (key.name === "tab" || key.name === "e") {
       key.preventDefault();
@@ -84,7 +85,7 @@ export function NewSession(props: {
           <box height={1} flexDirection="row">
             <text fg={mi() === r() ? colors.selected : colors.dim}>{mi() === r() ? "❯ " : "  "}</text>
             <text fg={props.store.hostColor(m.id)} attributes={mi() === r() ? TextAttributes.BOLD : undefined}>{m.id.padEnd(width)}</text>
-            <For each={HARNESSES}>
+            <For each={harnesses}>
               {(h, c) => {
                 const p = { machine: m.id, harness: h };
                 const on = () => mi() === r() && hi() === c();

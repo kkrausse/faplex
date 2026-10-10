@@ -88,7 +88,7 @@ type MetricsCache = {
   models: Map<string, { checkedAt: number; models: readonly typeof Model.Type[] }>;
 };
 
-const list = (m: Machine, home: string, api: Api, prompts: PromptCache, metrics: MetricsCache) =>
+const list = (m: Machine, home: string, api: Api, prompts: PromptCache, metrics: MetricsCache, mini: boolean) =>
   Effect.gen(function* () {
     const [sessions, active] = yield* Effect.all([readPages((cursor) =>
       get(api, `/api/session?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`).pipe(
@@ -163,7 +163,7 @@ const list = (m: Machine, home: string, api: Api, prompts: PromptCache, metrics:
           : s.outcome === "interrupted" ? "interrupted"
           : "idle";
         const cwd = s.location?.directory ?? home;
-        const harness = opencodeHarness(s.metadata);
+        const harness = mini ? opencodeHarness(s.metadata) : "opencode";
         return {
           machine: m.id,
           harness,
@@ -225,7 +225,7 @@ const stopSession = (api: Api, id: string) =>
  * The machine's OpenCode sessions: the full list on start, on each relevant event, and every 60 s.
  * While connected, `setStop` holds a function that stops a session through the same forward.
  */
-export const opencodeSessions = (m: Machine, home: string, setStop: (stop: ((id: string) => Effect.Effect<void, SourceError>) | undefined) => void): Stream.Stream<ReadonlyArray<Session>, SourceError> =>
+export const opencodeSessions = (m: Machine, home: string, setStop: (stop: ((id: string) => Effect.Effect<void, SourceError>) | undefined) => void, mini = false): Stream.Stream<ReadonlyArray<Session>, SourceError> =>
   Stream.unwrap(
     Effect.gen(function* () {
       const s = yield* service(m);
@@ -240,7 +240,7 @@ export const opencodeSessions = (m: Machine, home: string, setStop: (stop: ((id:
       return Stream.merge(Stream.tick("60 seconds"), events(api)).pipe(
         // Events arriving while a list is in flight collapse into one more list.
         Stream.buffer({ capacity: 1, strategy: "sliding" }),
-        Stream.mapEffect(() => list(m, home, api, prompts, metrics)),
+        Stream.mapEffect(() => list(m, home, api, prompts, metrics, mini)),
       );
     }),
   );

@@ -1,4 +1,4 @@
-// ~/.config/faplex/config.json: the machines to list, two timings and one switch. Every key is optional and
+// ~/.config/faplex/config.json: the machines to list, two timings and two switches. Every key is optional and
 // no file at all means this machine with the defaults. schema.json at the repo root is generated
 // from the schema here (scripts/schema.ts), so editors can complete and check the file.
 import { existsSync, readFileSync } from "node:fs";
@@ -28,6 +28,8 @@ export interface Config {
   readonly closeHiddenAfterMs: number;
   /** Copy local files pasted or dropped into a remote session to that machine (drop.ts). */
   readonly uploadDrops: boolean;
+  /** Offer OpenCode Mini as its own harness in the new-session picker and the list. */
+  readonly opencodeMini: boolean;
 }
 
 const text = (description: string) => Schema.optionalKey(Schema.String.annotate({ description }));
@@ -51,6 +53,12 @@ export const ConfigSchema = Schema.Struct({
   uploadDrops: Schema.optionalKey(
     Schema.Boolean.annotate({
       description: "With a remote session open, a pasted or dropped path to a local file is copied to the remote machine's temp directory and the path there is typed instead.",
+      default: false,
+    }),
+  ),
+  opencodeMini: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description: "Offer OpenCode Mini (`opencode mini`, the scrollback-style interface) as its own choice in the new-session picker, and open sessions started that way in Mini.",
       default: false,
     }),
   ),
@@ -105,5 +113,6 @@ export function loadConfig(hosts: readonly string[] = []): Config {
     archiveAfterMs: (raw.archiveAfterHours ?? 24) * 3600_000,
     closeHiddenAfterMs: (raw.closeHiddenAfterMinutes ?? 15) * 60_000,
     uploadDrops: raw.uploadDrops ?? false,
+    opencodeMini: raw.opencodeMini ?? false,
   };
 }
