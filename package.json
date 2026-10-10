@@ -24,6 +24,7 @@
     "check": "tsc --noEmit",
     "build": "bun scripts/build.ts bin",
     "build:npm": "bun scripts/build.ts npm",
+    "test:e2e": "bun test ./e2e/left.e2e.ts",
     "schema": "bun scripts/schema.ts",
     "release": "bun scripts/release.ts",
     "prepublishOnly": "bun run check && bun run schema && bun run build:npm"

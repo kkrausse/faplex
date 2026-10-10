@@ -233,6 +233,11 @@ with the real Claude Code, Codex and OpenCode pointed at a fake model API, and s
 sessions (`e2e/compose.yaml` lists the commands). The demo above is recorded on it:
 `e2e/record.sh` writes `e2e/out/demo.gif`, which is copied to `docs/demo.gif`.
 
+`bun run test:e2e` runs the rig's tests (so far: ← in an open session, in all three harnesses).
+They read what the harnesses draw, so a harness release can break them; `CLAUDE_VERSION=latest
+bun run test:e2e` (likewise `CODEX_VERSION`, `OPENCODE_VERSION`) runs them against other versions
+than the pinned ones.
+
 ## Releasing
 
 ```sh
