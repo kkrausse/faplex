@@ -10,7 +10,7 @@ nothing. The harnesses keep their own sessions running; faplex reads what they r
 opens the harness's own CLI on the row you pick.
 
 > **Early alpha:** expect rough edges. Given how little faplex touches, it is unlikely to break
-> your sessions. Your data stays in the respective harnesses.
+> your sessions. Your data stays in the harnesses.
 
 - **One grouped, prioritized, real-time list.** Working, Needs input, Finished, across every
   machine and harness, with context tokens and subagent counts.
