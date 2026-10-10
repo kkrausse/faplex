@@ -9,8 +9,8 @@ sessions you already have, on every machine you can `ssh` to. Fake because it mu
 nothing. The harnesses keep their own sessions running; faplex reads what they report and
 opens the harness's own CLI on the row you pick.
 
-> **Early alpha:** expect rough edges. Your sessions live in the harnesses, not in faplex, so a
-> faplex bug or crash doesn't take them down.
+> **Early alpha:** expect rough edges. Given how little faplex touches, it is unlikely to break
+> your sessions.
 
 - **One grouped, prioritized, real-time list.** Working, Needs input, Finished, across every
   machine and harness, with context tokens and subagent counts.
