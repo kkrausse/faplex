@@ -1,6 +1,6 @@
 # faplex
 
-Like `claude agents`, but for all your harnesses and all your machines.
+Like `claude agents`, but for all your harnesses and machines.
 
 ![faplex demo](docs/demo.gif)
 
