@@ -6,7 +6,7 @@
 // keeps the order it had when the list opened.
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid";
-import { Index, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { Index, Match, Show, Switch, batch, createEffect, createMemo, createSignal, on } from "solid-js";
 import type { Background, Session, Status } from "./session.ts";
 import { DAEMON_START, isUnprompted } from "./session.ts";
 import { QUIET } from "./errors.ts";
@@ -40,7 +40,9 @@ const runningText = (b: Background) =>
 
 export const label = (s: Pick<Session, "machine" | "harness">) => `${s.machine}·${s.harness}`;
 
-type Item = { header: Section; count: number } | { row: Session; section: Section };
+type Item = { header: Section; count: number } | { row: Session; section: Section } | { menu: Session } | { newRow: true };
+/** The selection key of the "new session" row above the list. */
+const NEW = "\0new";
 
 export function SessionList(props: {
   store: DashStore;
@@ -64,6 +66,8 @@ export function SessionList(props: {
   const [selected, setSelected] = createSignal(props.initialSelected ?? "");
   const [filter, setFilter] = createSignal("");
   const [filtering, setFiltering] = createSignal(false);
+  // ← on a row opens its actions under it; → or ⏎ runs one, ← or esc closes them.
+  const [menu, setMenu] = createSignal<{ key: string; i: number }>();
   const [flash, setFlashRaw] = createSignal(props.flash ?? "");
   let flashTimer: ReturnType<typeof setTimeout> | undefined;
   const setFlash = (m: string) => {
@@ -83,9 +87,18 @@ export function SessionList(props: {
   const marked = (machine: string) => timedOut() || state.marks[machine] !== undefined;
   const all = createMemo(() => [...props.extra(), ...props.store.rows()].filter((s) => !props.hidden().has(s.key) && !isUnprompted(s) && marked(s.machine)));
   const archivedOf = (s: Session) => props.store.archivedOf(s, now);
-  // Archived is collapsed unless the selection is in it: ↓ past the last row above it opens it,
-  // and moving back up closes it.
-  const showArchived = createMemo(() => all().some((s) => s.key === selected() && archivedOf(s)));
+  // Archived is collapsed unless the user moved into it: ↓ past the last row above it opens it, and
+  // moving back up closes it. A selected row that moves there by itself (it aged out, or its host's
+  // archive marks came in late) doesn't take the selection along.
+  const initial = all().find((s) => s.key === props.initialSelected);
+  const [showArchived, setShowArchived] = createSignal(!!initial && archivedOf(initial));
+  const select = (s: Session | undefined) => {
+    if (!s) return;
+    batch(() => {
+      setSelected(s.key);
+      setShowArchived(archivedOf(s));
+    });
+  };
   const stopping = (s: Session) => !!state.archiving[s.key] && state.archiving[s.key]!.failed === undefined;
   /** The stop error of an archived session that is still running. */
   const stopFailed = (s: Session) => (s.stoppable ? state.archiving[s.key]?.failed : undefined);
@@ -135,23 +148,33 @@ export function SessionList(props: {
       if (!rows.length) continue;
       items.push({ header: id, count: rows.length });
       if (id === "archived" && !showArchived() && !q) continue;
-      for (const s of rows) items.push({ row: s, section: id }), list.push(s);
+      for (const s of rows) {
+        items.push({ row: s, section: id }), list.push(s);
+        if (menu()?.key === s.key) items.push({ menu: s });
+      }
     }
+    if (!q) items.unshift({ newRow: true });
     return { items, list, archived: by.get("archived")!, archivedHidden: !showArchived() && !q ? by.get("archived")!.length : 0, stopFailed: by.get("archived")!.filter((s) => stopFailed(s) !== undefined).length };
   });
 
-  const index = createMemo(() => Math.max(0, view().list.findIndex((s) => s.key === selected())));
-  const current = () => view().list[index()];
+  // Where the selection was last seen, so a row that leaves the list hands it to the row now there.
+  let lastIndex = 0;
+  const index = createMemo(() => {
+    const i = view().list.findIndex((s) => s.key === selected());
+    return i < 0 ? lastIndex : (lastIndex = i);
+  });
+  const onNewRow = () => selected() === NEW && !filter();
+  const current = () => (onNewRow() ? undefined : view().list[index()]);
 
   createEffect(() => {
     const list = view().list;
-    if (ready() && list.length && !list.some((s) => s.key === selected())) setSelected(list[Math.min(index(), list.length - 1)]!.key);
+    if (ready() && list.length && !onNewRow() && !list.some((s) => s.key === selected())) select(list[Math.min(index(), list.length - 1)]);
   });
   createEffect(() => {
     let y = 0;
     for (const it of view().items) {
-      if ("row" in it && it.row.key === selected()) break;
-      y += "row" in it ? 1 : HEADER_H;
+      if ("row" in it ? it.row.key === selected() : "newRow" in it && onNewRow()) break;
+      y += "header" in it ? HEADER_H : 1;
     }
     if (!scroll) return;
     const top = scroll.scrollTop, h = scroll.viewport.height;
@@ -161,15 +184,17 @@ export function SessionList(props: {
 
   const move = (d: number) => {
     const { list, archived, archivedHidden } = view();
-    if (d > 0 && archivedHidden && index() >= list.length - 1) setSelected(archived[0]!.key);
-    else if (list.length) setSelected(list[Math.min(list.length - 1, Math.max(0, index() + d))]!.key);
+    if (onNewRow()) return d > 0 && select(list[Math.min(list.length - 1, d - 1)]);
+    if (d < 0 && index() === 0 && !filter()) return setSelected(NEW);
+    if (d > 0 && archivedHidden && index() >= list.length - 1) select(archived[0]);
+    else if (list.length) select(list[Math.min(list.length - 1, Math.max(0, index() + d))]);
   };
   /** Into Archived, or back out to the last row above it. */
   const toggleArchived = () => {
     const { list, archived } = view();
     const out = list.findLast((s) => !archivedOf(s));
-    if (!showArchived()) archived[0] && setSelected(archived[0].key);
-    else if (out) setSelected(out.key);
+    if (!showArchived()) select(archived[0]);
+    else if (out) select(out);
   };
 
   /** Next row in the same section, else the previous one: where selection goes when this row leaves. */
@@ -194,7 +219,7 @@ export function SessionList(props: {
       const list = view().list;
       const i = list.indexOf(s);
       const next = neighbor(s) ?? (list[i - 1] ?? list.slice(i + 1).find((o) => !archivedOf(o)))?.key;
-      if (next) setSelected(next);
+      if (next) select(view().list.find((o) => o.key === next));
     }
     if (s.stoppable) setFlash(`stopping ${s.title}…`);
     try {
@@ -213,15 +238,31 @@ export function SessionList(props: {
     const next = neighbor(s);
     try {
       await props.store.mark(s, false);
-      if (next && selected() === s.key) setSelected(next);
+      if (next && selected() === s.key) select(view().list.find((o) => o.key === next));
       setFlash(`restored ${s.title}`);
     } catch (e) {
       setFlash(`restore failed: ${message(e)}`);
     }
   }
 
+  createEffect(on(selected, () => setMenu(undefined), { defer: true }));
+  const actions = (s: Session): { label: string; run: () => void }[] =>
+    archivedOf(s) ? [{ label: "restore", run: () => void restore(s) }] : [{ label: s.stoppable ? "stop and archive" : "archive", run: () => void archive(s) }];
+
   useKeyboard((key) => {
     if (!props.active() || key.defaultPrevented) return;
+    const m = menu(), ms = m && current();
+    if (m && ms) {
+      const acts = actions(ms);
+      if (key.name === "up" || key.name === "k") setMenu({ ...m, i: Math.max(0, m.i - 1) });
+      else if (key.name === "down" || key.name === "j") setMenu({ ...m, i: Math.min(acts.length - 1, m.i + 1) });
+      else if (key.name === "right" || key.name === "l" || key.name === "return") {
+        setMenu(undefined);
+        acts[Math.min(m.i, acts.length - 1)]?.run();
+      } else if (key.name === "left" || key.name === "h" || key.name === "escape") setMenu(undefined);
+      else if (key.name === "q" || (key.ctrl && key.name === "c")) props.onQuit();
+      return;
+    }
     if (filtering()) {
       if (key.name === "escape") {
         setFiltering(false);
@@ -232,6 +273,8 @@ export function SessionList(props: {
     const s = current();
     if (key.name === "up" || key.name === "k") move(key.shift ? -8 : -1);
     else if (key.name === "down" || key.name === "j") move(key.shift ? 8 : 1);
+    else if ((key.name === "return" || key.name === "right" || key.name === "l") && onNewRow()) props.onNew();
+    else if ((key.name === "left" || key.name === "h") && s) setMenu({ key: s.key, i: 0 });
     else if ((key.name === "return" || key.name === "right" || key.name === "l") && s) {
       if (s.open) props.onOpen(s);
       else setFlash(s.closedReason ?? "can't open this session here");
@@ -349,11 +392,16 @@ export function SessionList(props: {
               const i = it();
               return "header" in i ? i : undefined;
             };
+            const menuOf = () => {
+              const i = it();
+              return "menu" in i ? i.menu : undefined;
+            };
+            const isNew = () => "newRow" in it();
             // Keeps the last row while the slot turns into a header, until the row view is disposed.
             let last: Session | undefined;
             const s = () => {
               const i = it();
-              return "row" in i ? (last = i.row) : last!;
+              return "row" in i ? (last = i.row) : (last ?? ({ key: "", status: "idle" } as Session));
             };
             const active = () => current()?.key === s().key;
             const st = (): Status => s().status;
@@ -370,7 +418,7 @@ export function SessionList(props: {
             const statusText = () =>
               stopping(s()) ? (s().stoppable ? "stopping…" : "archiving…") : stopFailed(s()) !== undefined ? `still running · stop failed: ${stopFailed(s())}` : st() === "failed" || st() === "interrupted" ? st() : "";
             const row = () => (
-              <box height={1} flexShrink={0} flexDirection="row" backgroundColor={active() ? colors.surfaceRaised : colors.bg} onMouseDown={() => setSelected(s().key)}>
+              <box height={1} flexShrink={0} flexDirection="row" backgroundColor={active() ? colors.surfaceRaised : colors.bg} onMouseDown={() => select(s())}>
                 <box width={2} flexShrink={0} flexDirection="row">
                   <text fg={active() && !ending() && !archived() && !"needs working failed".includes(st()) ? colors.selected : color()}>{gutter()}</text>
                   <text fg={color()}>{also()}</text>
@@ -396,9 +444,30 @@ export function SessionList(props: {
                 <text wrapMode="none" flexShrink={0} fg={archived() ? colors.dim : colors.muted}>{cell(age(s().updatedAt), AGE_W, true)}</text>
               </box>
             );
-            // Index reuses slots by position, so a slot can switch between header and row.
+            const newRow = () => (
+              <box height={1} flexShrink={0} flexDirection="row" backgroundColor={onNewRow() ? colors.surfaceRaised : colors.bg} onMouseDown={() => setSelected(NEW)}>
+                <text width={2} flexShrink={0} fg={colors.selected}>{onNewRow() ? "❯" : " "}</text>
+                <text wrapMode="none" fg={onNewRow() ? colors.selected : colors.muted} attributes={onNewRow() ? TextAttributes.BOLD : undefined}>+ new session</text>
+              </box>
+            );
+            const menuRow = (ms: Session) => (
+              <box height={1} flexShrink={0} flexDirection="row" paddingLeft={4}>
+                <Index each={actions(ms)}>
+                  {(a, i) => (
+                    <text wrapMode="none" fg={menu()?.i === i ? colors.selected : colors.muted} attributes={menu()?.i === i ? TextAttributes.BOLD : undefined}>
+                      {`${menu()?.i === i ? "❯ " : "  "}${a().label}   `}
+                    </text>
+                  )}
+                </Index>
+                <text wrapMode="none" fg={colors.dim}>→ run · ← close</text>
+              </box>
+            );
+            // Index reuses slots by position, so a slot can switch between kinds.
             return (
-              <Show when={header()} keyed fallback={row()}>
+              <Switch fallback={row()}>
+                <Match when={isNew()}>{newRow()}</Match>
+                <Match when={menuOf()} keyed>{(ms) => menuRow(ms)}</Match>
+                <Match when={header()} keyed>
                 {(h) => (
                   <box height={HEADER_H} flexShrink={0} border={["top"]} borderColor={colors.border} flexDirection="row">
                     <text fg={h.header === "archived" ? colors.dim : h.header === "needs" ? colors.permission : colors.text} attributes={TextAttributes.BOLD}>{SECTIONS.find((x) => x.id === h.header)!.label}</text>
@@ -408,7 +477,8 @@ export function SessionList(props: {
                     </Show>
                   </box>
                 )}
-              </Show>
+                </Match>
+              </Switch>
             );
           }}
         </Index>
@@ -423,7 +493,7 @@ export function SessionList(props: {
           current()?.context && `${current()!.context!.usedTokens.toLocaleString()}${current()!.context!.limitTokens ? ` / ${current()!.context!.limitTokens!.toLocaleString()}` : ""} context tokens · last response ${relTime(current()!.context!.measuredAt)}`,
         ].filter(Boolean).join(" · ")}</text>
         <text height={1} wrapMode="none" fg={colors.dim}>
-          {current() ? (current()!.open ? `⏎ ${current()!.open!.cmd.join(" ")}` : current()!.closedReason) : ""}
+          {current() ? (current()!.open ? `⏎ ${current()!.open!.cmd.join(" ")}` : current()!.closedReason) : onNewRow() ? "⏎ pick a machine, harness and folder for a new session" : ""}
         </text>
       </box>
       <Show when={problems().quiet}>
@@ -435,7 +505,7 @@ export function SessionList(props: {
           fallback={
             <text fg={colors.dim} wrapMode="none">
               {flash() ? `${flash()} · ` : ""}
-              {filter() ? `filter: ${filter()} · ` : ""}↑↓ move · ⏎ open · n new · x stop+archive · r restore · R reattach · tab archived · / filter · q quit · ctrl+] back from a session
+              {filter() ? `filter: ${filter()} · ` : ""}↑↓ move · ⏎ open · ← actions · n new · x stop+archive · r restore · R reattach · tab archived · / filter · q quit · ctrl+] back from a session
             </text>
           }
         >
