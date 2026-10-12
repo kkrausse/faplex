@@ -19,35 +19,52 @@ const TICK_S = 2;
 // ignored, so a write to the dead dashboard's stdout just fails and the loop used to poll on
 // forever as an orphan. So the reader quits when its write fails or the top-level sh ($$) is gone,
 // and the ticker when either of those took the reader.
+// Process starts dominate a tick (~100 sessions), so each tick spends a fixed few on all files at
+// once: one stat per kind, one awk for changed jobs, one tail for changed transcripts. Changed
+// files' texts follow their `@@job` / `@@ctx` lines as `@@text <id>` blocks. tail is given
+// /dev/null too so it always prints its `==> file <==` headers (BSD tail has no -v).
 const LOOP = `
 J="$HOME/.claude/jobs"; P="$HOME/.claude/projects"; seen=""; seent=""
+if stat -c %Y / >/dev/null 2>&1; then mt() { stat -c '%Y %n' "$@" 2>/dev/null; }; else mt() { stat -f '%m %N' "$@" 2>/dev/null; }; fi
 { while kill -0 $$ 2>/dev/null && echo; do sleep ${TICK_S}; done & cat; } | while read -r _; do {
   kill -0 $$ 2>/dev/null || exit
   echo "@@archive" || exit; cat "${ARCHIVE_FILE}" 2>/dev/null; echo
   if command -v claude >/dev/null 2>&1; then
     out=$(claude agents --json --all 2>&1); echo "@@claude $?"; printf '%s\\n' "$out"
-    next=""
+    set --
     for id in $(printf '%s\\n' "$out" | sed -n 's/^ *"id": *"\\([A-Za-z0-9_-]*\\)".*/\\1/p'); do
-      f="$J/$id/state.json"; [ -f "$f" ] || continue
-      t=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f")
-      next="$next $id:$t"
-      case " $seen " in *" $id:$t "*) echo "@@job $id $t same" ;; *) echo "@@job $id $t"; cat "$f"; echo ;; esac
+      [ -f "$J/$id/state.json" ] && set -- "$@" "$J/$id/state.json"
     done
+    stats=$([ $# -gt 0 ] && mt "$@"); set --; next=""
+    while read -r t f; do
+      [ -n "$f" ] || continue
+      id=\${f%/state.json}; id=\${id##*/}; next="$next $id:$t"
+      case " $seen " in *" $id:$t "*) echo "@@job $id $t same" ;; *) echo "@@job $id $t"; set -- "$@" "$f" ;; esac
+    done <<EOF
+$stats
+EOF
     seen=$next
-    next=""
+    [ $# -gt 0 ] && awk 'FNR == 1 { id = FILENAME; sub(/\\/state\\.json$/, "", id); sub(/.*\\//, "", id); print "@@text " id } { print }' "$@"
+    set --
     for sid in $(printf '%s\\n' "$out" | sed -n 's/^ *"sessionId": *"\\([A-Za-z0-9_-]*\\)".*/\\1/p'); do
-      for f in "$P"/*/"$sid".jsonl; do
-        [ -f "$f" ] || continue
-        t=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f")
-        n=$(ls "\${f%.jsonl}/subagents" 2>/dev/null | grep -c '^agent-.*\\.jsonl$')
-        next="$next $sid:$t"
-        case " $seent " in *" $sid:$t "*) echo "@@ctx $sid $t $n same" ;; *)
-          echo "@@ctx $sid $t $n"
-          tail -c 400000 "$f" | grep -e '"usage":{"input_tokens"' -e '"subtype":"compact_boundary"' | grep -v '"model":"<synthetic>"' | tail -n 1 ;;
-        esac
-      done
+      for f in "$P"/*/"$sid".jsonl; do [ -f "$f" ] && set -- "$@" "$f"; done
     done
+    stats=$([ $# -gt 0 ] && mt "$@"); set --; next=""
+    while read -r t f; do
+      [ -n "$f" ] || continue
+      sid=\${f##*/}; sid=\${sid%.jsonl}; next="$next $sid:$t"
+      n=0; for a in "\${f%.jsonl}"/subagents/agent-*.jsonl; do [ -f "$a" ] && n=$((n + 1)); done
+      case " $seent " in *" $sid:$t "*) echo "@@ctx $sid $t $n same" ;; *) echo "@@ctx $sid $t $n"; set -- "$@" "$f" ;; esac
+    done <<EOF
+$stats
+EOF
     seent=$next
+    [ $# -gt 0 ] && tail -c 400000 "$@" /dev/null 2>/dev/null | grep -e '^==> .* <==$' -e '"usage":{"input_tokens"' -e '"subtype":"compact_boundary"' | grep -v '"model":"<synthetic>"' | awk '
+      function flush() { if (f != "" && f != "/dev/null") { s = f; sub(/.*\\//, "", s); sub(/\\.jsonl$/, "", s); print "@@text " s; if (last != "") print last } }
+      /^==> .* <==$/ { flush(); f = substr($0, 5, length($0) - 8); last = ""; next }
+      { last = $0 }
+      END { flush() }'
+    set --
   else echo "@@claude missing"; fi
   echo "@@end"
 } </dev/null; done`;
@@ -84,13 +101,16 @@ function step(acc: Acc, line: string): readonly [Acc, HostRecord[]] {
     const prev = acc.prevJobs.get(a);
     const job = { mtime: Number(b) * 1000, text: same && prev ? prev.text : [] };
     c.jobs.set(a, job);
-    acc.section = same ? undefined : job;
+    acc.section = undefined;
   } else if (tag === "@@ctx" && a) {
     // Here the fourth word is the subagent count, which changes without the transcript changing.
     const prev = acc.prevTranscripts.get(a);
     const t = { mtime: Number(b) * 1000, subagents: Number(same) || 0, text: sameCtx && prev ? prev.text : [] };
     c.transcripts.set(a, t);
-    acc.section = sameCtx ? undefined : t;
+    acc.section = undefined;
+  } else if (tag === "@@text" && a) {
+    // Jobs' texts come before transcripts', and a job id is never a session id.
+    acc.section = c.transcripts.get(a) ?? c.jobs.get(a);
   } else if (tag === "@@end") {
     const jobs = new Map([...c.jobs].map(([id, j]) => [id, { mtime: j.mtime, text: joined(j) }]));
     const transcripts = new Map([...c.transcripts].map(([id, t]) => [id, { mtime: t.mtime, subagents: t.subagents, text: joined(t) }]));
