@@ -66,7 +66,7 @@ export function SessionList(props: {
   const [selected, setSelected] = createSignal(props.initialSelected ?? "");
   const [filter, setFilter] = createSignal("");
   const [filtering, setFiltering] = createSignal(false);
-  // ← on a row opens its actions under it; → or ⏎ runs one, ← or esc closes them.
+  // ← on a row opens its actions under it; ⏎ runs one, ←, → or esc closes them.
   const [menu, setMenu] = createSignal<{ key: string; i: number }>();
   const [flash, setFlashRaw] = createSignal(props.flash ?? "");
   let flashTimer: ReturnType<typeof setTimeout> | undefined;
@@ -256,10 +256,10 @@ export function SessionList(props: {
       const acts = actions(ms);
       if (key.name === "up" || key.name === "k") setMenu({ ...m, i: Math.max(0, m.i - 1) });
       else if (key.name === "down" || key.name === "j") setMenu({ ...m, i: Math.min(acts.length - 1, m.i + 1) });
-      else if (key.name === "right" || key.name === "l" || key.name === "return") {
+      else if (key.name === "return") {
         setMenu(undefined);
         acts[Math.min(m.i, acts.length - 1)]?.run();
-      } else if (key.name === "left" || key.name === "h" || key.name === "escape") setMenu(undefined);
+      } else if (["left", "h", "right", "l", "escape"].includes(key.name)) setMenu(undefined);
       else if (key.name === "q" || (key.ctrl && key.name === "c")) props.onQuit();
       return;
     }
@@ -459,7 +459,7 @@ export function SessionList(props: {
                     </text>
                   )}
                 </Index>
-                <text wrapMode="none" fg={colors.dim}>→ run · ← close</text>
+                <text wrapMode="none" fg={colors.dim}>⏎ run · ←→ close</text>
               </box>
             );
             // Index reuses slots by position, so a slot can switch between kinds.
