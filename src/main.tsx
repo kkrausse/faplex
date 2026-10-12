@@ -51,7 +51,20 @@ type Client = {
   shownAt: number;
   /** Tail of the output, to explain a failed ssh. */
   tail: string;
+  /** False until the CLI's first screen settles; keys typed before then wait in `held`. */
+  ready: boolean;
+  held: Buffer[];
+  settle?: Timer;
+  cap?: Timer;
 };
+
+// A newly attached CLI is drawn once it has written nothing for SETTLE_MS. Before that the prompt
+// check can't be trusted: `claude attach` draws its first frame with the cursor hidden, then
+// redraws for ~2s with gaps of up to ~500ms, and an unhandled ← opens Claude's own agents view.
+// READY_CAP_MS (counted from the first output) covers a spinner that never goes quiet.
+const SETTLE_MS = 700;
+const READY_CAP_MS = 3000;
+const ATTACHING = "\x1b[2mattaching…\x1b[0m\r";
 
 const size = () => ({ cols: process.stdout.columns || 80, rows: process.stdout.rows || 24 });
 
@@ -102,9 +115,11 @@ function App(props: { store: DashStore }) {
     const c = view();
     if (!c) return;
     const input = data.toString("latin1");
-    const left = isLeftInput(input) && (c.exited !== undefined || c.shadow.atPromptStart());
-    if (isBackInput(input) || left) return back();
+    // Still attaching with nothing typed: ← can only mean leave.
+    const empty = c.exited !== undefined || (!c.ready && c.held.length === 0) || (c.ready && c.shadow.atPromptStart());
+    if (isBackInput(input) || (isLeftInput(input) && empty)) return back();
     if (c.exited !== undefined) return;
+    if (!c.ready) return void c.held.push(data);
     c.send(data);
   };
   const onResize = () => {
@@ -123,6 +138,8 @@ function App(props: { store: DashStore }) {
     const prev = view();
     if (prev) {
       prev.shownAt = now;
+      // Keys held while it was attaching were for that screen.
+      prev.held = [];
       process.stdin.off("data", onInput);
       process.stdout.off("resize", onResize);
       process.stdout.write(prev.modes.undo());
@@ -137,8 +154,10 @@ function App(props: { store: DashStore }) {
     c.shownAt = now;
     renderer.suspend();
     process.stdout.write(CLEAR + c.modes.restore());
-    if (c.exited === undefined) fit(c, size().rows);
-    else process.stdout.write(`${c.tail}\r\n\x1b[0m\x1b[33m[faplex] ${c.note} · ctrl+] or ← to go back\x1b[0m\r\n`);
+    if (c.exited === undefined) {
+      fit(c, size().rows);
+      if (!c.tail) process.stdout.write(ATTACHING);
+    } else process.stdout.write(`${c.tail}\r\n\x1b[0m\x1b[33m[faplex] ${c.note} · ctrl+] or ← to go back\x1b[0m\r\n`);
     process.stdin.setRawMode(true);
     process.stdin.on("data", onInput);
     process.stdin.resume();
@@ -176,10 +195,19 @@ function App(props: { store: DashStore }) {
     }
   }, 60_000).unref?.();
 
+  function markReady(c: Client) {
+    if (c.ready) return;
+    clearTimeout(c.settle);
+    clearTimeout(c.cap);
+    c.ready = true;
+    if (view() === c) for (const d of c.held) c.send(d);
+    c.held = [];
+  }
+
   function spawn(s: Session): Client {
     const m = props.store.machine(s.machine);
     const { cols, rows } = size();
-    const c: Client = { session: s, proc: undefined!, send: undefined!, shadow: createShadow(cols, rows), modes: createModes(), shownAt: Date.now(), tail: "" };
+    const c: Client = { session: s, proc: undefined!, send: undefined!, shadow: createShadow(cols, rows), modes: createModes(), shownAt: Date.now(), tail: "", ready: false, held: [] };
     const decoder = new TextDecoder();
     // Store values are proxies; Bun.spawn needs a plain array.
     const cmd = on(m, [...s.open!.cmd], { cwd: s.open!.cwd, tty: true });
@@ -195,6 +223,11 @@ function App(props: { store: DashStore }) {
           const text = decoder.decode(d, { stream: true });
           c.tail = (c.tail + text).slice(-2000);
           c.modes.track(text);
+          if (!c.ready) {
+            clearTimeout(c.settle);
+            c.settle = setTimeout(() => markReady(c), SETTLE_MS);
+            c.cap ??= setTimeout(() => markReady(c), READY_CAP_MS);
+          }
         },
       },
     });
@@ -204,6 +237,7 @@ function App(props: { store: DashStore }) {
     c.send = m.ssh && config.uploadDrops ? remoteDrops(m, write) : write;
     proc.exited.then((code) => {
       c.exited = code;
+      markReady(c);
       syncLive();
       // A clean exit is the CLI's own "leave"; an error stays on screen until ctrl+] or ←.
       if (code === 0) {
