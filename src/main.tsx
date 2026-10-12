@@ -203,9 +203,9 @@ function App(props: { store: DashStore }) {
     c.held = [];
   }
 
-  function spawn(s: Session): Client {
+  function spawn(s: Session, rows = size().rows): Client {
     const m = props.store.machine(s.machine);
-    const { cols, rows } = size();
+    const { cols } = size();
     const c: Client = { session: s, proc: undefined!, send: undefined!, shadow: createShadow(cols, rows), modes: createModes(), shownAt: Date.now(), tail: "", ready: false, held: [] };
     const decoder = new TextDecoder();
     // Store values are proxies; Bun.spawn needs a plain array.
@@ -289,14 +289,16 @@ function App(props: { store: DashStore }) {
     }
     const known = new Set(props.store.rows(p.harness).filter((s) => s.machine === p.machine).map((s) => s.key));
     const l = await props.store.launch(p.machine, p.harness, dir, prompt);
-    const c = spawn(placeholder(p, l, prompt));
-    if (!prompt || "trust" in l) c.fresh = p;
+    const shown = !prompt || "trust" in l;
+    // Started hidden, it sits one row short like any hidden client, so first opening it repaints.
+    const c = spawn(placeholder(p, l, prompt), shown ? size().rows : Math.max(1, size().rows - 1));
+    if (shown) c.fresh = p;
     if ("trust" in l) awaitTrust(c, p, dir, known, prompt);
     else c.claim = { claim: l.claim, known };
     syncLive();
     setScreen("list");
     // The trust prompt has to be answered on screen.
-    if (!prompt || "trust" in l) return show(c);
+    if (shown) return show(c);
     awaitStart(c);
     props.store.refresh(p.machine);
     setMount({ n: mount().n + 1, selected: c.session.key, flash: undefined });

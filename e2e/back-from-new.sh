@@ -29,3 +29,18 @@ sleep 2
 termctrl send $s left
 termctrl wait $s "Working 3" --timeout 15000 || { termctrl show $s; echo "FAIL: ← did not come back to the list"; exit 1; }
 echo "ok: ← from a working new session is back on the list"
+
+# Repro: a session started from the picker on a prompt runs hidden at full height, so opening it
+# was no resize, Claude never repainted, and the screen showed only its spinner line. It must open
+# fully drawn.
+termctrl send $s text:n; termctrl wait $s "New session"
+termctrl send $s "text:draft the changelog"; sleep 0.3; termctrl send $s enter
+termctrl wait $s "draft the changelog" --timeout 15000
+sleep 4
+for _ in 1 2 3 4 5 6 7 8; do
+  termctrl show $s | grep -q "claude · draft the changelog ·" && break
+  termctrl send $s down; sleep 0.3
+done
+termctrl send $s enter
+termctrl wait $s "❯ draft the changelog" --timeout 15000 || { termctrl show $s; echo "FAIL: a session started on a prompt opened half drawn"; exit 1; }
+echo "ok: a session started on a prompt opens fully drawn"
