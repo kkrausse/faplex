@@ -115,7 +115,6 @@ export const hostFeed = (m: Machine, setRefresh: (refresh: (() => void) | undefi
   );
 
 const Entry = Schema.Struct({
-  pid: Schema.optionalKey(Schema.Number),
   id: Schema.optionalKey(Schema.String),
   sessionId: Schema.String,
   kind: Schema.String,
@@ -168,14 +167,6 @@ export function claudeContext(line: string): { usage: ContextUsage; model: strin
   return { model, usage: { usedTokens, measuredAt: Date.parse(timestamp) || Date.now() } };
 }
 
-// Paseo runs Claude headless (stream-json, no TTY); its sessions are only answerable from paseotui.
-// Uses local ps, so it is only checked on the local machine.
-function underPaseo(pid: number | undefined): boolean {
-  if (!pid) return false;
-  const ppid = Bun.spawnSync(["ps", "-o", "ppid=", "-p", String(pid)]).stdout.toString().trim();
-  return !!ppid && Bun.spawnSync(["ps", "-o", "comm=", "-p", ppid]).stdout.toString().includes("Paseo");
-}
-
 const background = (running: readonly { label?: string | null }[], kind: Background["kind"]): Background | undefined =>
   running.length ? { kind, count: running.length, label: running[0]!.label ?? "" } : undefined;
 
@@ -220,14 +211,13 @@ export const claudeSessions = (m: Machine, rec: HostRecord): Effect.Effect<Sessi
         const transcript = c.transcripts.get(e.sessionId);
         const context = transcript && claudeContext(transcript.text);
         const bg = e.kind === "background" && e.id;
-        const paseo = !bg && !m.ssh && underPaseo(e.pid);
         const id = e.id ?? e.sessionId;
         return {
           machine: m.id,
           harness: "claude",
           key: sessionKey(m.id, "claude", id),
           id,
-          title: (e.name ?? e.sessionId.slice(0, 8)) + (paseo ? " (paseo)" : ""),
+          title: e.name ?? e.sessionId.slice(0, 8),
           cwd: e.cwd,
           status,
           prompted: unprompted ? false : job?.needs || job?.detail ? true : undefined,
@@ -244,8 +234,8 @@ export const claudeSessions = (m: Machine, rec: HostRecord): Effect.Effect<Sessi
           // start it again. Interactive sessions belong to their terminal.
           stoppable: !!bg && e.state !== "stopped" && e.state !== "killed",
           // An interactive session is owned by the terminal it runs in; a second client would fork it.
-          open: bg ? { cmd: ["claude", "attach", e.id!], cwd: e.cwd } : paseo ? { cmd: ["paseotui"], cwd: e.cwd } : undefined,
-          closedReason: bg || paseo ? undefined : "interactive session · open it in its own terminal",
+          open: bg ? { cmd: ["claude", "attach", e.id!], cwd: e.cwd } : undefined,
+          closedReason: bg ? undefined : "interactive session · open it in its own terminal",
         } satisfies Session;
       }),
     );

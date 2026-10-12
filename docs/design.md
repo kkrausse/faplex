@@ -88,8 +88,7 @@ dashboard gets a record at once by writing a newline. It does that when you leav
 (a prompt you just sent shows as working without waiting for the tick) and after `claude stop`.
 The loop emits every tick even when nothing changed; no record for ~3 ticks fails
 the stream and the supervisor restarts the command. Local uses the same loop. A
-host without `claude` still runs it for its archive marks. The Paseo check (local
-`ps`) only runs for the local machine.
+host without `claude` still runs it for its archive marks.
 
 ### OpenCode
 
