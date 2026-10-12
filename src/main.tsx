@@ -51,18 +51,15 @@ type Client = {
   shownAt: number;
   /** Tail of the output, to explain a failed ssh. */
   tail: string;
-  /** False until the CLI's first screen settles; keys typed before then wait in `held`. */
+  /** False until the CLI turns on bracketed paste; keys typed before then wait in `held`. */
   ready: boolean;
   held: Buffer[];
-  settle?: Timer;
   cap?: Timer;
 };
 
-// A newly attached CLI is drawn once it has written nothing for SETTLE_MS. Before that the prompt
-// check can't be trusted: `claude attach` draws its first frame with the cursor hidden, then
-// redraws for ~2s with gaps of up to ~500ms, and an unhandled ← opens Claude's own agents view.
-// READY_CAP_MS (counted from the first output) covers a spinner that never goes quiet.
-const SETTLE_MS = 700;
+// A newly attached CLI takes keys once it turns on bracketed paste. `claude attach` does that only
+// after its loader (~1.6s), and ← in the loader opens Claude's own agents view; OpenCode and
+// Codex turn it on first thing. READY_CAP_MS (from the first output) covers a CLI that never does.
 const READY_CAP_MS = 3000;
 const ATTACHING = "\x1b[2mattaching…\x1b[0m\r";
 
@@ -197,7 +194,6 @@ function App(props: { store: DashStore }) {
 
   function markReady(c: Client) {
     if (c.ready) return;
-    clearTimeout(c.settle);
     clearTimeout(c.cap);
     c.ready = true;
     if (view() === c) for (const d of c.held) c.send(d);
@@ -224,9 +220,8 @@ function App(props: { store: DashStore }) {
           c.tail = (c.tail + text).slice(-2000);
           c.modes.track(text);
           if (!c.ready) {
-            clearTimeout(c.settle);
-            c.settle = setTimeout(() => markReady(c), SETTLE_MS);
-            c.cap ??= setTimeout(() => markReady(c), READY_CAP_MS);
+            if (c.modes.on("2004")) markReady(c);
+            else c.cap ??= setTimeout(() => markReady(c), READY_CAP_MS);
           }
         },
       },

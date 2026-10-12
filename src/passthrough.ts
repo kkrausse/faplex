@@ -82,6 +82,8 @@ export function createShadow(cols: number, rows: number): Shadow {
 export interface Modes {
   /** Record the mode changes in a chunk of harness output. */
   track(chunk: string): void;
+  /** Whether the harness has a private mode (e.g. "2004", bracketed paste) switched on. */
+  on(mode: string): boolean;
   /** Sequences that put the terminal back in the modes the harness left it in. */
   restore(): string;
   /** Sequences that undo those modes, for handing the terminal back to the dashboard. */
@@ -114,6 +116,7 @@ export function createModes(): Modes {
       }
       carry = text.match(UNFINISHED)?.[0] ?? "";
     },
+    on: (mode) => priv.get(mode) === true,
     restore() {
       let out = "";
       for (const [m, on] of priv) if (on !== DEFAULT_ON.has(m)) out += `\x1b[?${m}${on ? "h" : "l"}`;
