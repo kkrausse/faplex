@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { render, useRenderer } from "@opentui/solid";
 import { Show, createEffect, createSignal } from "solid-js";
@@ -217,7 +217,7 @@ function App(props: { store: DashStore }) {
         cols,
         rows,
         data: (_t, d) => {
-          if (view() === c) process.stdout.write(d);
+          if (view() === c && !quitting) process.stdout.write(d);
           c.shadow.write(d);
           const text = decoder.decode(d, { stream: true });
           c.tail = (c.tail + text).slice(-2000);
@@ -366,16 +366,38 @@ function App(props: { store: DashStore }) {
     }
   });
 
+  // Quitting from inside a session: the renderer is suspended and only knows its own modes, so
+  // the ones the CLI switched on (alternate screen, kitty keys, focus and mouse reports, bracketed
+  // paste) would stay on in the shell, which then prints every report as text. Also run on
+  // "exit", for an end that never reaches `quit`. Written synchronously: the process is ending.
+  const handBack = () => {
+    const c = view();
+    if (!c) return;
+    const undo = c.modes.undo();
+    c.modes.clear();
+    try {
+      writeSync(1, undo);
+    } catch {
+      // The terminal is gone.
+    }
+  };
+  process.on("exit", handBack);
+
   let quitting = false;
   const quit = async () => {
     if (quitting) return;
+    // From here a dying CLI's last output is dropped too, so it can't switch anything back on.
     quitting = true;
     // Whatever below hangs or throws (a terminal that is gone, a stuck ssh), the process still ends.
     setTimeout(() => process.exit(0), 3000);
     try {
+      process.stdin.off("data", onInput);
+      handBack();
       // Clients only; every agent lives on in its own daemon.
       for (const c of clients.values()) c.proc.kill();
       renderer.destroy();
+      // Left raw by an open session: a suspended renderer doesn't put the tty back.
+      if (process.stdin.isTTY) process.stdin.setRawMode(false);
       process.stdout.write(POP_TITLE);
       await props.store.stop();
     } finally {
@@ -384,7 +406,8 @@ function App(props: { store: DashStore }) {
   };
   // A dashboard whose terminal went away (tab closed, harness killed) would otherwise keep polling
   // every host with nobody watching.
-  for (const sig of ["SIGHUP", "SIGTERM"] as const) process.on(sig, () => void quit());
+  // SIGINT and SIGQUIT too: the renderer handles them itself only while it isn't suspended.
+  for (const sig of ["SIGHUP", "SIGTERM", "SIGINT", "SIGQUIT"] as const) process.on(sig, () => void quit());
   process.stdin.on("end", () => void quit());
   process.stdin.on("error", () => void quit());
   process.stdout.on("error", () => void quit());
