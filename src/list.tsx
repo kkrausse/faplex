@@ -48,6 +48,8 @@ export function SessionList(props: {
   store: DashStore;
   initialSelected?: string;
   flash?: string;
+  /** Ignore ⏎ for a moment after mounting: it was typed for the screen before. */
+  swallowEnter?: boolean;
   /** False while a session pane is showing; the list then ignores keys. */
   active: () => boolean;
   /** Sessions with a live embedded client. */
@@ -63,6 +65,7 @@ export function SessionList(props: {
   onQuit: () => void;
 }) {
   const { state } = props.store;
+  const enterFrom = props.swallowEnter ? Date.now() + 1000 : 0;
   const [selected, setSelected] = createSignal(props.initialSelected ?? "");
   const [filter, setFilter] = createSignal("");
   const [filtering, setFiltering] = createSignal(false);
@@ -251,6 +254,7 @@ export function SessionList(props: {
 
   useKeyboard((key) => {
     if (!props.active() || key.defaultPrevented) return;
+    if (key.name === "return" && Date.now() < enterFrom) return;
     const m = menu(), ms = m && current();
     if (m && ms) {
       const acts = actions(ms);

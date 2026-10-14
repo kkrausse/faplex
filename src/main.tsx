@@ -97,7 +97,7 @@ function App(props: { store: DashStore }) {
   // Used new chats whose session hasn't been reported yet.
   const [pending, setPending] = createSignal<Session[]>([]);
   // Remount the list on return so it re-sorts with fresh status.
-  const [mount, setMount] = createSignal({ n: 0, selected: undefined as string | undefined, flash: undefined as string | undefined });
+  const [mount, setMount] = createSignal({ n: 0, selected: undefined as string | undefined, flash: undefined as string | undefined, swallowEnter: false });
 
   const syncLive = () => {
     const alive = [...clients.values()].filter((c) => c.exited === undefined);
@@ -174,7 +174,7 @@ function App(props: { store: DashStore }) {
     if (c?.fresh && c.exited === undefined) setLastPick(c.fresh);
     show(undefined);
     if (c?.exited !== undefined) drop(c);
-    setMount({ n: mount().n + 1, selected: c?.session.key, flash });
+    setMount({ n: mount().n + 1, selected: c?.session.key, flash, swallowEnter: false });
   }
 
   function drop(c: Client) {
@@ -301,7 +301,8 @@ function App(props: { store: DashStore }) {
     if (shown) return show(c);
     awaitStart(c);
     props.store.refresh(p.machine);
-    setMount({ n: mount().n + 1, selected: c.session.key, flash: undefined });
+    // An Enter pressed again while it started would open the new row.
+    setMount({ n: mount().n + 1, selected: c.session.key, flash: undefined, swallowEnter: true });
   }
   // A hidden client whose session never turns up is waiting on something only its pane shows (a
   // trust or login prompt, a failed start), so its row asks to be opened.
@@ -438,6 +439,7 @@ function App(props: { store: DashStore }) {
               store={props.store}
               initialSelected={m.selected}
               flash={m.flash}
+              swallowEnter={m.swallowEnter}
               active={() => !view() && screen() === "list"}
               onNew={() => setScreen("new")}
               live={live}

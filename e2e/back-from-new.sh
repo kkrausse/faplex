@@ -44,3 +44,12 @@ done
 termctrl send $s enter
 termctrl wait $s "❯ draft the changelog" --timeout 15000 || { termctrl show $s; echo "FAIL: a session started on a prompt opened half drawn"; exit 1; }
 echo "ok: a session started on a prompt opens fully drawn"
+
+# Repro: an Enter pressed again right after starting a session on a prompt landed on the list and
+# opened the new row. It must stay on the list.
+printf '\035' | termctrl send $s --stdin; sleep 1
+termctrl send $s text:n; termctrl wait $s "New session"
+termctrl send $s "text:count the files"; sleep 0.3; termctrl send $s enter; sleep 0.5; termctrl send $s enter
+sleep 3
+termctrl show $s | grep -q "+ new session" || { termctrl show $s; echo "FAIL: a second Enter opened the new session"; exit 1; }
+echo "ok: a second Enter after starting on a prompt stays on the list"
