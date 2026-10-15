@@ -104,6 +104,8 @@ function App(props: { store: DashStore }) {
   const [freshKeys, setFreshKeys] = createSignal<ReadonlySet<string>>(new Set());
   // Used new chats whose session hasn't been reported yet.
   const [pending, setPending] = createSignal<Session[]>([]);
+  // A new session's placeholder key → its real key, so a selection on the placeholder follows it.
+  const claimed = new Map<string, string>();
   // Remount the list on return so it re-sorts with fresh status.
   const [mount, setMount] = createSignal({ n: 0, selected: undefined as string | undefined, flash: undefined as string | undefined, swallowEnter: false });
 
@@ -403,6 +405,7 @@ function App(props: { store: DashStore }) {
       const cl = c.claim;
       const real = cl && all.find((s) => matches(cl, c.session, s));
       if (!real) continue;
+      claimed.set(c.session.key, real.key);
       clients.delete(c.session.key);
       c.session = real;
       c.claim = undefined;
@@ -490,6 +493,7 @@ function App(props: { store: DashStore }) {
               live={live}
               hidden={freshKeys}
               extra={pending}
+              claimed={(key) => claimed.get(key)}
               onOpen={open}
               onReattach={reattach}
               onQuit={() => void quit()}

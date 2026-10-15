@@ -58,6 +58,8 @@ export function SessionList(props: {
   hidden: () => ReadonlySet<string>;
   /** Rows for used new chats their source hasn't reported yet. */
   extra: () => Session[];
+  /** The real key of a placeholder row whose session turned up. */
+  claimed: (key: string) => string | undefined;
   onOpen: (s: Session) => void;
   /** Open with a new client, closing the live one. */
   onReattach: (s: Session) => void;
@@ -171,7 +173,9 @@ export function SessionList(props: {
 
   createEffect(() => {
     const list = view().list;
-    if (ready() && list.length && !onNewRow() && !list.some((s) => s.key === selected())) select(list[Math.min(index(), list.length - 1)]);
+    if (!ready() || !list.length || onNewRow() || list.some((s) => s.key === selected())) return;
+    const real = props.claimed(selected());
+    select(list.find((s) => s.key === real) ?? list[Math.min(index(), list.length - 1)]);
   });
   createEffect(() => {
     let y = 0;
