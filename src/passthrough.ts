@@ -19,6 +19,7 @@ export const isLeftInput = (input: string) => isPlainLeft.test(input);
 // before it. The glyph is required: the start of a later line of a multi-line prompt is blank up to
 // the cursor too, and ← there moves to the end of the line above.
 const PROMPT_START = /^\s*[❯›>┃│]\s*$/;
+const PROMPT_GLYPH = /^\s*[❯›>┃│]\s?/;
 // OpenCode's input box has its bar on every line, so there a later line looks like the first one:
 // the same bar with text after it on the row above gives it away.
 const BAR = /^(\s*[┃│])\s*$/;
@@ -27,6 +28,8 @@ export interface Shadow {
   write(data: Uint8Array): void;
   resize(cols: number, rows: number): void;
   atPromptStart(): boolean;
+  /** Whether the cursor sits after an input prompt's glyph with exactly `text` typed. */
+  atPromptWith(text: string): boolean;
   destroy(): void;
 }
 
@@ -34,6 +37,23 @@ export interface Shadow {
 export function createShadow(cols: number, rows: number): Shadow {
   const lib = resolveRenderLib();
   let handle: ReturnType<typeof lib.createEmbeddedTerminal> | null = lib.createEmbeddedTerminal({ cols, rows, maxScrollback: 0 });
+  // The text left of the cursor, and the line above. The cursor is only known for a composed frame.
+  // Composing draws just the cells that changed since the last one, so invalidate first: a fresh
+  // buffer would otherwise come back blank, and a blank line reads as an empty prompt.
+  const cursorLine = () => {
+    if (handle === null) return undefined;
+    lib.embeddedTerminalInvalidate(handle);
+    const buffer = OptimizedBuffer.create(cols, rows, "unicode");
+    try {
+      lib.embeddedTerminalCompose(handle, buffer.ptr, 0, 0);
+      const cursor = lib.embeddedTerminalCursor(handle);
+      if (!cursor.hasValue) return undefined;
+      const lines = new TextDecoder().decode(buffer.getRealCharBytes(true)).split("\n");
+      return { before: [...(lines[cursor.y] ?? "")].slice(0, cursor.x).join(""), above: lines[cursor.y - 1] ?? "" };
+    } finally {
+      buffer.destroy();
+    }
+  };
   return {
     write(data) {
       if (handle === null) return;
@@ -49,27 +69,17 @@ export function createShadow(cols: number, rows: number): Shadow {
       lib.embeddedTerminalDrainResponses(handle);
     },
     atPromptStart() {
-      if (handle === null) return false;
-      // The cursor is only known for a composed frame. Composing draws just the cells that changed
-      // since the last one, so invalidate first: a fresh buffer would otherwise come back blank,
-      // and a blank line reads as an empty prompt.
-      lib.embeddedTerminalInvalidate(handle);
-      const buffer = OptimizedBuffer.create(cols, rows, "unicode");
-      try {
-        lib.embeddedTerminalCompose(handle, buffer.ptr, 0, 0);
-        const cursor = lib.embeddedTerminalCursor(handle);
-        if (!cursor.hasValue) return false;
-        const lines = new TextDecoder().decode(buffer.getRealCharBytes(true)).split("\n");
-        const before = [...(lines[cursor.y] ?? "")].slice(0, cursor.x).join("");
-        const bar = before.match(BAR)?.[1];
-        const above = lines[cursor.y - 1] ?? "";
-        if (bar && above.startsWith(bar) && above.slice(bar.length).trim()) return false;
-        // Visible or not: Claude Code hides the terminal's cursor in a session it started itself
-        // (not in one it attached to) and draws its own, but still parks the hidden one at the prompt.
-        return PROMPT_START.test(before);
-      } finally {
-        buffer.destroy();
-      }
+      const at = cursorLine();
+      if (!at) return false;
+      const bar = at.before.match(BAR)?.[1];
+      if (bar && at.above.startsWith(bar) && at.above.slice(bar.length).trim()) return false;
+      // Visible or not: Claude Code hides the terminal's cursor in a session it started itself
+      // (not in one it attached to) and draws its own, but still parks the hidden one at the prompt.
+      return PROMPT_START.test(at.before);
+    },
+    atPromptWith(text) {
+      const at = cursorLine();
+      return !!at && PROMPT_GLYPH.test(at.before) && at.before.replace(PROMPT_GLYPH, "") === text;
     },
     destroy() {
       if (handle === null) return;

@@ -52,16 +52,23 @@ type Client = {
   shownAt: number;
   /** Tail of the output, to explain a failed ssh. */
   tail: string;
-  /** False until the CLI turns on bracketed paste; keys typed before then wait in `held`. */
+  /** False until the CLI takes keys; keys typed before then wait in `held`. */
   ready: boolean;
   held: Buffer[];
   cap?: Timer;
+  /** Claude's output until it is ready, written out in one go then: the probe never shows. */
+  buffered?: Uint8Array[];
+  /** How far the probe got: "." typed, then erased. */
+  probe?: "dot" | "erase";
 };
 
-// A newly attached CLI takes keys once it turns on bracketed paste. `claude attach` does that only
-// after its loader (~1.6s), and ← in the loader opens Claude's own agents view; OpenCode and
-// Codex turn it on first thing. READY_CAP_MS (from the first output) covers a CLI that never does.
+// A newly attached CLI takes keys once it turns on bracketed paste. OpenCode and Codex do that first
+// thing. Claude turns it on before its prompt is drawn, and ← there opens Claude's own agents view,
+// so Claude is probed after: a "." typed has to show at the prompt and a backspace has to erase it.
+// A "." that doesn't echo within PROBE_ECHO_MS (a permission menu) ends the probe; READY_CAP_MS
+// (from the first output) covers a CLI that never gets there.
 const READY_CAP_MS = 3000;
+const PROBE_ECHO_MS = 1000;
 const ATTACHING = "\x1b[2mattaching…\x1b[0m\r";
 
 const size = () => ({ cols: process.stdout.columns || 80, rows: process.stdout.rows || 24 });
@@ -156,7 +163,7 @@ function App(props: { store: DashStore }) {
     process.stdout.write(CLEAR + c.modes.restore());
     if (c.exited === undefined) {
       fit(c, size().rows);
-      if (!c.tail) process.stdout.write(ATTACHING);
+      if (c.buffered || !c.tail) process.stdout.write(ATTACHING);
     } else process.stdout.write(`${c.tail}\r\n\x1b[0m\x1b[33m[faplex] ${c.note} · ctrl+] or ← to go back\x1b[0m\r\n`);
     process.stdin.setRawMode(true);
     process.stdin.on("data", onInput);
@@ -199,14 +206,36 @@ function App(props: { store: DashStore }) {
     if (c.ready) return;
     clearTimeout(c.cap);
     c.ready = true;
-    if (view() === c) for (const d of c.held) c.send(d);
+    const buffered = c.buffered;
+    c.buffered = undefined;
+    if (view() === c) {
+      // Over the "attaching…" line, at the top left where the CLI's output starts.
+      if (buffered && !quitting) process.stdout.write(Buffer.concat(["\r\x1b[2K", ...buffered].map((d) => Buffer.from(d))));
+      for (const d of c.held) c.send(d);
+    }
     c.held = [];
+  }
+
+  function probe(c: Client) {
+    const write = (k: string) => void (c.exited === undefined && c.proc.terminal?.write(k));
+    if (!c.probe) {
+      if (!c.modes.on("2004")) return;
+      c.probe = "dot";
+      write(".");
+      clearTimeout(c.cap);
+      c.cap = setTimeout(() => c.probe === "dot" && markReady(c), PROBE_ECHO_MS);
+    } else if (c.probe === "dot" && c.shadow.atPromptWith(".")) {
+      c.probe = "erase";
+      write("\x7f");
+      clearTimeout(c.cap);
+      c.cap = setTimeout(() => markReady(c), PROBE_ECHO_MS);
+    } else if (c.probe === "erase" && c.shadow.atPromptStart()) markReady(c);
   }
 
   function spawn(s: Session, rows = size().rows): Client {
     const m = props.store.machine(s.machine);
     const { cols } = size();
-    const c: Client = { session: s, proc: undefined!, send: undefined!, shadow: createShadow(cols, rows), modes: createModes(), shownAt: Date.now(), tail: "", ready: false, held: [] };
+    const c: Client = { session: s, proc: undefined!, send: undefined!, shadow: createShadow(cols, rows), modes: createModes(), shownAt: Date.now(), tail: "", ready: false, held: [], buffered: s.harness === "claude" ? [] : undefined };
     const decoder = new TextDecoder();
     // Store values are proxies; Bun.spawn needs a plain array.
     const cmd = on(m, [...s.open!.cmd], { cwd: s.open!.cwd, tty: true });
@@ -217,14 +246,16 @@ function App(props: { store: DashStore }) {
         cols,
         rows,
         data: (_t, d) => {
-          if (view() === c && !quitting) process.stdout.write(d);
+          if (c.buffered) c.buffered.push(d);
+          else if (view() === c && !quitting) process.stdout.write(d);
           c.shadow.write(d);
           const text = decoder.decode(d, { stream: true });
           c.tail = (c.tail + text).slice(-2000);
           c.modes.track(text);
           if (!c.ready) {
-            if (c.modes.on("2004")) markReady(c);
-            else c.cap ??= setTimeout(() => markReady(c), READY_CAP_MS);
+            if (c.buffered) probe(c);
+            else if (c.modes.on("2004")) markReady(c);
+            if (!c.ready) c.cap ??= setTimeout(() => markReady(c), READY_CAP_MS);
           }
         },
       },
