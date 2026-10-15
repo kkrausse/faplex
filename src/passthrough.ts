@@ -19,7 +19,8 @@ export const isLeftInput = (input: string) => isPlainLeft.test(input);
 // before it. The glyph is required: the start of a later line of a multi-line prompt is blank up to
 // the cursor too, and ← there moves to the end of the line above.
 const PROMPT_START = /^\s*[❯›>┃│]\s*$/;
-const PROMPT_GLYPH = /^\s*[❯›>┃│]\s?/;
+// Claude's input line. Read whole: Claude doesn't always leave the terminal's cursor where it types.
+const CLAUDE_INPUT = /^\s*❯/;
 // OpenCode's input box has its bar on every line, so there a later line looks like the first one:
 // the same bar with text after it on the row above gives it away.
 const BAR = /^(\s*[┃│])\s*$/;
@@ -28,8 +29,8 @@ export interface Shadow {
   write(data: Uint8Array): void;
   resize(cols: number, rows: number): void;
   atPromptStart(): boolean;
-  /** Whether the cursor sits after an input prompt's glyph with exactly `text` typed. */
-  atPromptWith(text: string): boolean;
+  /** Claude's input line, the last one starting with ❯. */
+  claudeInput(): string | undefined;
   destroy(): void;
 }
 
@@ -37,22 +38,28 @@ export interface Shadow {
 export function createShadow(cols: number, rows: number): Shadow {
   const lib = resolveRenderLib();
   let handle: ReturnType<typeof lib.createEmbeddedTerminal> | null = lib.createEmbeddedTerminal({ cols, rows, maxScrollback: 0 });
-  // The text left of the cursor, and the line above. The cursor is only known for a composed frame.
-  // Composing draws just the cells that changed since the last one, so invalidate first: a fresh
-  // buffer would otherwise come back blank, and a blank line reads as an empty prompt.
-  const cursorLine = () => {
+  // The screen's lines and cursor. The cursor is only known for a composed frame. Composing draws
+  // just the cells that changed since the last one, so invalidate first: a fresh buffer would
+  // otherwise come back blank, and a blank line reads as an empty prompt.
+  const frame = () => {
     if (handle === null) return undefined;
     lib.embeddedTerminalInvalidate(handle);
     const buffer = OptimizedBuffer.create(cols, rows, "unicode");
     try {
       lib.embeddedTerminalCompose(handle, buffer.ptr, 0, 0);
       const cursor = lib.embeddedTerminalCursor(handle);
-      if (!cursor.hasValue) return undefined;
       const lines = new TextDecoder().decode(buffer.getRealCharBytes(true)).split("\n");
-      return { before: [...(lines[cursor.y] ?? "")].slice(0, cursor.x).join(""), above: lines[cursor.y - 1] ?? "" };
+      return { lines, cursor: cursor.hasValue ? cursor : undefined };
     } finally {
       buffer.destroy();
     }
+  };
+  // The text left of the cursor, and the line above.
+  const cursorLine = () => {
+    const f = frame();
+    if (!f?.cursor) return undefined;
+    const { lines, cursor } = f;
+    return { before: [...(lines[cursor.y] ?? "")].slice(0, cursor.x).join(""), above: lines[cursor.y - 1] ?? "" };
   };
   return {
     write(data) {
@@ -77,9 +84,8 @@ export function createShadow(cols: number, rows: number): Shadow {
       // (not in one it attached to) and draws its own, but still parks the hidden one at the prompt.
       return PROMPT_START.test(at.before);
     },
-    atPromptWith(text) {
-      const at = cursorLine();
-      return !!at && PROMPT_GLYPH.test(at.before) && at.before.replace(PROMPT_GLYPH, "") === text;
+    claudeInput() {
+      return frame()?.lines.findLast((l) => CLAUDE_INPUT.test(l))?.trimEnd();
     },
     destroy() {
       if (handle === null) return;

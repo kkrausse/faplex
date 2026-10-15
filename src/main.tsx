@@ -58,15 +58,16 @@ type Client = {
   cap?: Timer;
   /** Claude's output until it is ready, written out in one go then: the probe never shows. */
   buffered?: Uint8Array[];
-  /** How far the probe got: "." typed, then erased. */
-  probe?: "dot" | "erase";
+  /** How far the probe got: "." typed, then erased. `base` is Claude's input line before it, if drawn yet. */
+  probe?: { step: "dot" | "erase"; base: string | undefined };
 };
 
 // A newly attached CLI takes keys once it turns on bracketed paste. OpenCode and Codex do that first
 // thing. Claude turns it on before its prompt is drawn, and ← there opens Claude's own agents view,
-// so Claude is probed after: a "." typed has to show at the prompt and a backspace has to erase it.
-// A "." that doesn't echo within PROBE_ECHO_MS (a permission menu) ends the probe; READY_CAP_MS
-// (from the first output) covers a CLI that never gets there.
+// so Claude is probed after: a "." typed has to show on its input line and a backspace has to
+// erase it. Keys pass only once the dot is gone. A "." that doesn't show within PROBE_ECHO_MS (a
+// permission menu) lets keys pass, but a late one is still erased until the first key goes in.
+// READY_CAP_MS (from the first output) covers a CLI that never turns on bracketed paste.
 const READY_CAP_MS = 3000;
 const PROBE_ECHO_MS = 1000;
 const ATTACHING = "\x1b[2mattaching…\x1b[0m\r";
@@ -127,6 +128,8 @@ function App(props: { store: DashStore }) {
     if (isBackInput(input) || (isLeftInput(input) && empty)) return back();
     if (c.exited !== undefined) return;
     if (!c.ready) return void c.held.push(data);
+    // A "." showing from here on could be the user's.
+    c.probe = undefined;
     c.send(data);
   };
   const onResize = () => {
@@ -206,6 +209,8 @@ function App(props: { store: DashStore }) {
     if (c.ready) return;
     clearTimeout(c.cap);
     c.ready = true;
+    // From here a "." on the input line could be the user's.
+    if (c.held.length) c.probe = undefined;
     const buffered = c.buffered;
     c.buffered = undefined;
     if (view() === c) {
@@ -218,18 +223,27 @@ function App(props: { store: DashStore }) {
 
   function probe(c: Client) {
     const write = (k: string) => void (c.exited === undefined && c.proc.terminal?.write(k));
-    if (!c.probe) {
-      if (!c.modes.on("2004")) return;
-      c.probe = "dot";
+    const p = c.probe;
+    if (!p) {
+      if (c.ready || !c.modes.on("2004")) return;
+      c.probe = { step: "dot", base: c.shadow.claudeInput() };
       write(".");
       clearTimeout(c.cap);
-      c.cap = setTimeout(() => c.probe === "dot" && markReady(c), PROBE_ECHO_MS);
-    } else if (c.probe === "dot" && c.shadow.atPromptWith(".")) {
-      c.probe = "erase";
+      c.cap = setTimeout(() => markReady(c), PROBE_ECHO_MS);
+      return;
+    }
+    const line = c.shadow.claudeInput();
+    if (p.step === "dot" && line !== undefined && line !== p.base && line.endsWith(".")) {
+      p.step = "erase";
       write("\x7f");
+      if (c.ready) return;
+      // The backspace is in; only its echo is outstanding.
       clearTimeout(c.cap);
       c.cap = setTimeout(() => markReady(c), PROBE_ECHO_MS);
-    } else if (c.probe === "erase" && c.shadow.atPromptStart()) markReady(c);
+    } else if (p.step === "erase" && line !== undefined && (p.base === undefined ? !line.endsWith(".") : line === p.base)) {
+      c.probe = undefined;
+      markReady(c);
+    }
   }
 
   function spawn(s: Session, rows = size().rows): Client {
@@ -252,9 +266,9 @@ function App(props: { store: DashStore }) {
           const text = decoder.decode(d, { stream: true });
           c.tail = (c.tail + text).slice(-2000);
           c.modes.track(text);
+          if (c.probe || (!c.ready && c.buffered)) probe(c);
           if (!c.ready) {
-            if (c.buffered) probe(c);
-            else if (c.modes.on("2004")) markReady(c);
+            if (!c.buffered && c.modes.on("2004")) markReady(c);
             if (!c.ready) c.cap ??= setTimeout(() => markReady(c), READY_CAP_MS);
           }
         },
