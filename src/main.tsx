@@ -1,6 +1,6 @@
 import { existsSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
-import { render, useRenderer } from "@opentui/solid";
+import { render, useKeyboard, useRenderer } from "@opentui/solid";
 import { Show, createEffect, createSignal } from "solid-js";
 import { createDashStore, type DashStore, type Launch } from "./store.ts";
 import { NewSession, type Pick } from "./new-session.tsx";
@@ -12,13 +12,22 @@ import { CLEAR, createModes, createShadow, isBackInput, isLeftInput, type Modes,
 import { hasStarted, sessionKey, type Claim, type Session } from "./session.ts";
 import { colors } from "./theme.ts";
 import { register } from "./procs.ts";
-import { hostArgs } from "./cli.ts";
+import { parseCommand, type Command } from "./cli.ts";
 import { loadConfig, type Config } from "./config.ts";
+import { addTags } from "./tags.ts";
+import { defaultDir, watch } from "./watch.ts";
+import { sourceKey } from "./store.ts";
 
-const hosts = hostArgs(process.argv.slice(2));
+const cmd = parseCommand(process.argv.slice(2));
+// A session pane run by another program (`open`, `new`) only needs its session's machine.
+const only = cmd.kind === "open" ? cmd.key.slice(0, cmd.key.indexOf("/")) : cmd.kind === "new" ? cmd.machine : undefined;
 let config: Config;
 try {
-  config = loadConfig(hosts);
+  config = loadConfig(cmd.kind === "dashboard" ? cmd.hosts : []);
+  if (only !== undefined) {
+    if (!config.machines.some((m) => m.id === only)) throw new Error(`no machine "${only}" in the config`);
+    config = { ...config, machines: config.machines.filter((m) => m.id === only) };
+  }
 } catch (e) {
   console.error(`faplex: ${e instanceof Error ? e.message : e}`);
   process.exit(1);
@@ -90,7 +99,12 @@ const TITLE = "⧉ faplex";
 const PUSH_TITLE = "\x1b[22;0t";
 const POP_TITLE = "\x1b]0;\x07\x1b[23;0t";
 
-function App(props: { store: DashStore }) {
+/** `open` and `new`: one session pane, and leaving it quits instead of showing the list. */
+type Single = Extract<Command, { kind: "open" | "new" }>;
+// How long `open` waits for its session to be listed, and `new` for its harness to report in.
+const SINGLE_WAIT_MS = 20_000;
+
+function App(props: { store: DashStore; single?: Single }) {
   const renderer = useRenderer();
   process.stdout.write(PUSH_TITLE);
   renderer.setTerminalTitle(TITLE);
@@ -178,6 +192,7 @@ function App(props: { store: DashStore }) {
 
   function back(flash?: string) {
     const c = view();
+    if (props.single) return void leaveSingle();
     // Whatever was just done in the session (a prompt sent, an answer given) shows on the list now.
     if (c) props.store.refresh(c.session.machine);
     // Always the list, a new chat included: whether its first prompt went in can't be told from
@@ -406,6 +421,7 @@ function App(props: { store: DashStore }) {
       const real = cl && all.find((s) => matches(cl, c.session, s));
       if (!real) continue;
       claimed.set(c.session.key, real.key);
+      if (props.single?.kind === "new") addTags(real.key, props.single.tags);
       clients.delete(c.session.key);
       c.session = real;
       c.claim = undefined;
@@ -433,12 +449,12 @@ function App(props: { store: DashStore }) {
   process.on("exit", handBack);
 
   let quitting = false;
-  const quit = async () => {
+  const quit = async (code = 0, message?: string) => {
     if (quitting) return;
     // From here a dying CLI's last output is dropped too, so it can't switch anything back on.
     quitting = true;
     // Whatever below hangs or throws (a terminal that is gone, a stuck ssh), the process still ends.
-    setTimeout(() => process.exit(0), 3000);
+    setTimeout(() => process.exit(code), 3000);
     try {
       process.stdin.off("data", onInput);
       handBack();
@@ -448,9 +464,10 @@ function App(props: { store: DashStore }) {
       // Left raw by an open session: a suspended renderer doesn't put the tty back.
       if (process.stdin.isTTY) process.stdin.setRawMode(false);
       process.stdout.write(POP_TITLE);
+      if (message) process.stderr.write(`faplex: ${message}\n`);
       await props.store.stop();
     } finally {
-      process.exit(0);
+      process.exit(code);
     }
   };
   // A dashboard whose terminal went away (tab closed, harness killed) would otherwise keep polling
@@ -466,6 +483,65 @@ function App(props: { store: DashStore }) {
     if (parent !== 1 && process.ppid === 1) void quit();
   }, 10_000).unref?.();
 
+  // `open` and `new`: the pane opens as soon as its session (or harness) is listed, and leaving
+  // it quits. Until then a line says what is being waited for.
+  const [waiting, setWaiting] = createSignal("connecting…");
+  const until = async (ready: () => boolean) => {
+    const end = Date.now() + SINGLE_WAIT_MS;
+    while (!ready()) {
+      if (Date.now() > end) return false;
+      await Bun.sleep(100);
+    }
+    return true;
+  };
+  async function startSingle(single: Single) {
+    // After the first render: showing a pane suspends the renderer.
+    await Bun.sleep(0);
+    if (single.kind === "open") {
+      const find = () => props.store.rows().find((s) => s.key === single.key);
+      if (!(await until(() => !!find()))) return void quit(1, `no session ${single.key}`);
+      const s = find()!;
+      if (!s.open) return void quit(1, `${single.key}: ${s.closedReason ?? "can't be opened here"}`);
+      return open(s);
+    }
+    const p: Pick = { machine: single.machine, harness: single.harness };
+    const source = () => props.store.state.sources[sourceKey(p.machine, p.harness)];
+    if (!source()) return void quit(1, `${p.harness} is not offered by this config`);
+    setWaiting(`waiting for ${p.harness} on ${p.machine}…`);
+    if (!(await until(() => source()!.loaded))) return void quit(1, `${p.harness} on ${p.machine} did not report in`);
+    const problem = source()!.problem;
+    if (problem) return void quit(1, `${p.harness} on ${p.machine}: ${problem.message}`);
+    const dir = single.dir ?? defaultDir(props.store, p.machine);
+    remember(p, dirKey(p.machine, !!props.store.machine(p.machine).ssh), dir);
+    const known = new Set(props.store.rows(p.harness).filter((s) => s.machine === p.machine).map((s) => s.key));
+    setWaiting(`starting ${p.harness} in ${dir}…`);
+    let l: Launch;
+    try {
+      l = await props.store.launch(p.machine, p.harness, dir, single.prompt);
+    } catch (e) {
+      return void quit(1, e instanceof Error ? e.message : String(e));
+    }
+    // A harness that names the new session up front gets its tags now, not when it is listed.
+    if ("claim" in l && "id" in l.claim) addTags(sessionKey(p.machine, p.harness, l.claim.id), single.tags);
+    const c = spawn(placeholder(p, l, single.prompt));
+    if ("trust" in l) awaitTrust(c, p, dir, known, single.prompt);
+    else c.claim = { claim: l.claim, known };
+    show(c);
+  }
+  // A new session's tags are written when its row is claimed, which can come after the pane is left.
+  async function leaveSingle() {
+    show(undefined);
+    setWaiting("saving…");
+    const end = Date.now() + 10_000;
+    const pending = () => [...clients.values()].some((c) => c.claim && c.exited === undefined);
+    while (pending() && Date.now() < end) await Bun.sleep(200);
+    void quit(0, pending() ? "the new session isn't listed yet, so its tags weren't saved" : undefined);
+  }
+  if (props.single) void startSingle(props.single);
+  useKeyboard((key) => {
+    if (props.single && !view() && (key.name === "escape" || key.name === "q" || (key.ctrl && key.name === "c"))) void quit(1, "canceled");
+  });
+
   return (
     <box flexDirection="column" width="100%" height="100%" backgroundColor={colors.bg}>
       <Show when={!view() && screen() === "new"}>
@@ -480,7 +556,10 @@ function App(props: { store: DashStore }) {
           />
         </box>
       </Show>
-      <box visible={!view() && screen() === "list"} flexGrow={1} minHeight={0}>
+      <Show when={props.single && !view()}>
+        <text fg={colors.dim}>{waiting()}</text>
+      </Show>
+      <box visible={!props.single && !view() && screen() === "list"} flexGrow={1} minHeight={0}>
         <Show when={mount()} keyed>
           {(m) => (
             <SessionList
@@ -488,7 +567,7 @@ function App(props: { store: DashStore }) {
               initialSelected={m.selected}
               flash={m.flash}
               swallowEnter={m.swallowEnter}
-              active={() => !view() && screen() === "list"}
+              active={() => !props.single && !view() && screen() === "list"}
               onNew={() => setScreen("new")}
               live={live}
               hidden={freshKeys}
@@ -505,4 +584,5 @@ function App(props: { store: DashStore }) {
   );
 }
 
-await render(() => <App store={store} />, { exitOnCtrlC: false, targetFps: 30 });
+if (cmd.kind === "watch") watch(config, store);
+else await render(() => <App store={store} single={cmd.kind === "dashboard" ? undefined : cmd} />, { exitOnCtrlC: false, targetFps: 30 });

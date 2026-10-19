@@ -190,6 +190,25 @@ files (of any size) is held while they are copied over the shared ssh connection
 also exists on the remote is left as it is, and so is the whole paste if a copy fails. Copies
 older than a day are deleted at the next drop; nothing else is written on the remote.
 
+## For other programs
+
+Three commands let another program show faplex's sessions and open them in its own UI. They use
+the machines in the config file.
+
+- `faplex watch --json` prints the whole list as one JSON line, again on every change: the
+  machines with the start dir a new session there defaults to, each machine × harness with its
+  problem if any (so a picker can grey out what is missing), the last machine × harness picked,
+  and every session with its status, `archived` as the dashboard counts it, and its `tags`. It
+  quits when its stdin closes.
+- `faplex open <key>` opens one session by its `machine/harness:id` key, exactly like opening a
+  row, and exits on ctrl+] or ← at an empty prompt. Run it with the terminal handed over.
+- `faplex new --machine <id> --harness <h> [--dir <dir>] [--prompt <text>] [--tag <tag>]...`
+  starts a session the way the new-session picker does and opens it like `open`. Tags are
+  free text (a ticket id, say) kept in `~/.local/state/faplex/tags.json` and listed by `watch`.
+  Without `--dir`, the picker's default for that machine is used.
+
+[GHUI](https://github.com/kkrausse/ghui) uses them to list and start sessions under Linear tickets.
+
 ## Providers
 
 What a harness needs to appear here, per machine:
