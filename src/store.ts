@@ -228,7 +228,7 @@ export function createDashStore(config: Config) {
       const m = machine(machineId);
       return Effect.runPromise(
         expand(m, dir).pipe(
-          Effect.flatMap((d): Effect.Effect<Launch, SourceError> => (h === "claude" ? launchClaude(m, d, prompt) : h === "opencode" ? launchOpencode(d, prompt) : h === "opencode-mini" ? launchOpencodeMini(m, d, prompt) : launchCodex(d, prompt))),
+          Effect.flatMap((d): Effect.Effect<Launch, SourceError> => (h === "claude" ? launchClaude(m, d, prompt) : h === "opencode" ? launchOpencode(m, d, prompt) : h === "opencode-mini" ? launchOpencodeMini(m, d, prompt) : launchCodex(d, prompt))),
         ),
       );
     },

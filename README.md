@@ -205,7 +205,8 @@ the machines in the config file.
 - `faplex new --machine <id> --harness <h> [--dir <dir>] [--prompt <text>] [--tag <tag>]...`
   starts a session the way the new-session picker does and opens it like `open`. Tags are
   free text (a ticket id, say) kept in `~/.local/state/faplex/tags.json` and listed by `watch`.
-  Without `--dir`, the picker's default for that machine is used.
+  Without `--dir`, the picker's default for that machine is used. With `--background` it
+  returns once the session is listed and working instead of opening it.
 
 [GHUI](https://github.com/kkrausse/ghui) uses them to list and start sessions under Linear tickets.
 

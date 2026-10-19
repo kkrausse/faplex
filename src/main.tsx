@@ -16,6 +16,7 @@ import { parseCommand, type Command } from "./cli.ts";
 import { loadConfig, type Config } from "./config.ts";
 import { addTags } from "./tags.ts";
 import { defaultDir, watch } from "./watch.ts";
+import { startInBackground } from "./background.ts";
 import { sourceKey } from "./store.ts";
 
 const cmd = parseCommand(process.argv.slice(2));
@@ -509,8 +510,9 @@ function App(props: { store: DashStore; single?: Single }) {
     if (!source()) return void quit(1, `${p.harness} is not offered by this config`);
     setWaiting(`waiting for ${p.harness} on ${p.machine}…`);
     if (!(await until(() => source()!.loaded))) return void quit(1, `${p.harness} on ${p.machine} did not report in`);
+    // Like the picker: a stopped daemon is started by the harness's own CLI.
     const problem = source()!.problem;
-    if (problem) return void quit(1, `${p.harness} on ${p.machine}: ${problem.message}`);
+    if (problem && problem.kind !== "stopped") return void quit(1, `${p.harness} on ${p.machine}: ${problem.message}`);
     const dir = single.dir ?? defaultDir(props.store, p.machine);
     remember(p, dirKey(p.machine, !!props.store.machine(p.machine).ssh), dir);
     const known = new Set(props.store.rows(p.harness).filter((s) => s.machine === p.machine).map((s) => s.key));
@@ -585,4 +587,8 @@ function App(props: { store: DashStore; single?: Single }) {
 }
 
 if (cmd.kind === "watch") watch(config, store);
-else await render(() => <App store={store} single={cmd.kind === "dashboard" ? undefined : cmd} />, { exitOnCtrlC: false, targetFps: 30 });
+else if (cmd.kind === "new" && cmd.background) {
+  const code = await startInBackground(store, cmd);
+  await store.stop();
+  process.exit(code);
+} else await render(() => <App store={store} single={cmd.kind === "dashboard" ? undefined : cmd} />, { exitOnCtrlC: false, targetFps: 30 });

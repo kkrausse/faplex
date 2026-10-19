@@ -1,6 +1,6 @@
 // `faplex watch --json`: the dashboard's data for another program, one JSON line per change on
 // stdout. No renderer; the same sources and store as the dashboard. Each line is complete:
-//   machines   id, short, whether it is remote, and the start dir a new session there defaults to
+//   machines   id, short, label color, whether it is remote, and the start dir a new session there defaults to
 //   harnesses  the harnesses this config lists
 //   lastPick   machine × harness of the last session started from any dashboard
 //   sources    per machine × harness: loaded, and the problem if any (missing, not running, ...)
@@ -22,7 +22,7 @@ export function watch(config: Config, store: DashStore) {
   const tick = () => {
     const tags = loadTags();
     const line = JSON.stringify({
-      machines: config.machines.map((m) => ({ id: m.id, short: m.short ?? m.id, remote: !!m.ssh, dir: defaultDir(store, m.id) })),
+      machines: config.machines.map((m) => ({ id: m.id, short: m.short ?? m.id, color: store.hostColor(m.id), remote: !!m.ssh, dir: defaultDir(store, m.id) })),
       harnesses: store.harnesses,
       lastPick: loadRemembered().pick ?? null,
       sources: Object.values(store.state.sources).map((s) => ({ machine: s.machine, harness: s.harness, loaded: s.loaded, problem: s.problem ?? null })),

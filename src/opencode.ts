@@ -5,7 +5,7 @@
 import { Effect, Schema, Stream } from "effect";
 import { decodeJson, decodeValue, fail, firstLine, type SourceError } from "./errors.ts";
 import { forward, q, sh, type Machine } from "./machines.ts";
-import { sessionKey, type ContextUsage, type Session, type Status } from "./session.ts";
+import { sessionKey, type Claim, type ContextUsage, type Session, type Status } from "./session.ts";
 import { latestContext, subagentSummary } from "./metrics.ts";
 import { readPages } from "./pages.ts";
 
@@ -245,17 +245,33 @@ export const opencodeSessions = (m: Machine, home: string, setStop: (stop: ((id:
     }),
   );
 
-const first = (prompt?: string) => (prompt ? ["--prompt", prompt] : []);
-export const launchOpencode = (dir: string, prompt?: string) => Effect.succeed({ cmd: ["opencode", dir, ...first(prompt)], cwd: dir, claim: { firstNewIn: dir } });
-
 const Created = decodeJson(Schema.Struct({ data: Schema.Struct({ id: Schema.String }) }), "opencode create session");
-export const launchOpencodeMini = (m: Machine, dir: string, prompt?: string, run: typeof sh = sh) =>
+
+/**
+ * Create a session through the service (`api` discovers/starts the same service as the CLI) and
+ * send its first prompt there: the CLI's `--prompt` only fills in the input box. Claimed by ID
+ * instead of guessing among concurrent new sessions.
+ */
+const create = (m: Machine, dir: string, prompt: string | undefined, metadata: Record<string, string> | undefined, check: string, run: typeof sh) =>
   Effect.gen(function* () {
-    // Create with metadata atomically, then claim by ID instead of guessing among
-    // concurrent new sessions. `api` discovers/starts the same service as the CLI.
-    const body = JSON.stringify({ location: { directory: dir }, metadata: MINI_METADATA });
-    const out = yield* run(m, `opencode mini --help >/dev/null && opencode api post /api/session --data ${q(body)}`);
-    if (out.code !== 0) return yield* fail("failed", firstLine(out.stderr) || `opencode mini launch exited ${out.code}`);
+    const body = JSON.stringify({ location: { directory: dir }, ...(metadata ? { metadata } : {}) });
+    const out = yield* run(m, `${check}opencode api post /api/session --data ${q(body)}`);
+    if (out.code !== 0) return yield* fail("failed", firstLine(out.stderr) || `opencode launch exited ${out.code}`);
     const { data: { id } } = yield* Created(out.stdout);
-    return { cmd: [...opencodeCommand(id, true), ...first(prompt)], cwd: dir, claim: { id } };
+    if (prompt) {
+      const sent = yield* run(m, `opencode api post /api/session/${q(id)}/prompt --data ${q(JSON.stringify({ text: prompt }))}`);
+      if (sent.code !== 0) return yield* fail("failed", firstLine(sent.stderr) || `opencode prompt exited ${sent.code}`);
+    }
+    return id;
   });
+
+/** Without a prompt the CLI opens its own new chat; with one, the session is created and prompted first. */
+export const launchOpencode = (m: Machine, dir: string, prompt?: string, run: typeof sh = sh): Effect.Effect<{ cmd: string[]; cwd: string; claim: Claim }, SourceError> =>
+  prompt
+    ? create(m, dir, prompt, undefined, "", run).pipe(Effect.map((id) => ({ cmd: opencodeCommand(id, false), cwd: dir, claim: { id } })))
+    : Effect.succeed({ cmd: ["opencode", dir], cwd: dir, claim: { firstNewIn: dir } });
+
+export const launchOpencodeMini = (m: Machine, dir: string, prompt?: string, run: typeof sh = sh) =>
+  create(m, dir, prompt, MINI_METADATA, "opencode mini --help >/dev/null && ", run).pipe(
+    Effect.map((id) => ({ cmd: opencodeCommand(id, true), cwd: dir, claim: { id } })),
+  );

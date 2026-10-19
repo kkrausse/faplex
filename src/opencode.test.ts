@@ -25,7 +25,7 @@ describe("OpenCode interfaces", () => {
   });
 
   test("full-screen launch is unchanged", async () => {
-    expect(await Effect.runPromise(launchOpencode("/project"))).toEqual({
+    expect(await Effect.runPromise(launchOpencode({ id: "test" }, "/project"))).toEqual({
       cmd: ["opencode", "/project"], cwd: "/project", claim: { firstNewIn: "/project" },
     });
   });
