@@ -199,7 +199,13 @@ the machines in the config file.
   machines with the start dir a new session there defaults to, each machine × harness with its
   problem if any (so a picker can grey out what is missing), the last machine × harness picked,
   and every session with its status, `archived` as the dashboard counts it, and its `tags`. It
-  quits when its stdin closes.
+  quits when its stdin closes. It also keeps the clients of sessions opened through it, so
+  reopening one is a repaint: the line carries a `socket` (owner-only Unix socket); connect,
+  write `{"key","cols","rows"}` and a newline, then relay raw keys in and output out until
+  the connection ends (the session was left). Only sessions it lists can be opened, with the
+  command it lists. On stdin it takes `{"size":{"cols","rows"}}` for your terminal and
+  `{"warm":"<key>"}` to attach a client before it is opened. Hidden clients close after
+  `closeHiddenAfterMinutes`, warmed ones never opened after two minutes.
 - `faplex open <key>` opens one session by its `machine/harness:id` key, exactly like opening a
   row, and exits on ctrl+] or ← at an empty prompt. Run it with the terminal handed over.
   `--open <json>` passes the session's `open` from `watch`, so it attaches at once instead of
