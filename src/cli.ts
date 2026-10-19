@@ -18,8 +18,10 @@ Usage:
 
 For other programs (every machine in the config file):
   faplex watch --json  print the session list as one JSON line on every change
-  faplex open <key>    open a session by its \`machine/harness:id\` key; returns on
-                       ctrl+] or ← at an empty prompt
+  faplex open <key> [--open <json>]
+                       open a session by its \`machine/harness:id\` key; returns on
+                       ctrl+] or ← at an empty prompt. --open is the session's
+                       \`open\` from \`watch\`: it attaches at once, without listing
   faplex new --machine <id> --harness <${HARNESSES.join("|")}>
              [--dir <dir>] [--prompt <text>] [--tag <tag>]... [--background]
                        start a session and open it like \`open\`; tags are listed
@@ -33,7 +35,7 @@ Config (optional): ~/.config/faplex/config.json
 export type Command =
   | { kind: "dashboard"; hosts: string[] }
   | { kind: "watch" }
-  | { kind: "open"; key: string }
+  | { kind: "open"; key: string; open?: { cmd: string[]; cwd: string } }
   | { kind: "new"; machine: string; harness: Harness; dir?: string; prompt?: string; tags: string[]; background: boolean };
 
 const usage = (message: string): never => {
@@ -56,8 +58,16 @@ export function parseCommand(args: string[]): Command {
     return { kind: "watch" };
   }
   if (args[0] === "open") {
-    if (args.length !== 2 || !args[1]!.includes("/")) usage("open takes one machine/harness:id key");
-    return { kind: "open", key: args[1]! };
+    const [, key, flag, json] = args;
+    if (!key?.includes("/") || !(args.length === 2 || (args.length === 4 && flag === "--open"))) usage("open takes one machine/harness:id key, optionally --open <json>");
+    if (json === undefined) return { kind: "open", key: key! };
+    let open: unknown;
+    try {
+      open = JSON.parse(json);
+    } catch {}
+    const o = open as { cmd?: unknown; cwd?: unknown } | undefined;
+    if (!Array.isArray(o?.cmd) || !o.cmd.every((c) => typeof c === "string") || typeof o.cwd !== "string") return usage("--open takes {\"cmd\": [...], \"cwd\": \"...\"}");
+    return { kind: "open", key: key!, open: { cmd: o.cmd as string[], cwd: o.cwd } };
   }
   if (args[0] === "new") {
     let values;

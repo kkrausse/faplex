@@ -36,7 +36,8 @@ try {
 register();
 
 const store = createDashStore(config);
-store.start();
+// `open --open` attaches without the list, so it starts no sources at all.
+if (!(cmd.kind === "open" && cmd.open)) store.start();
 
 // A native CLI running in a PTY (over ssh for remote machines). While it is open the dashboard's
 // renderer is suspended and the CLI owns the real terminal: output and keys pass straight through.
@@ -376,6 +377,15 @@ function App(props: { store: DashStore; single?: Single }) {
       syncLive();
     }, 12_000);
   }
+  // A session known only by its key and how to open it, from another program's `watch`.
+  const fromKey = (key: string, o: { cmd: string[]; cwd: string }): Session => {
+    const slash = key.indexOf("/");
+    const colon = key.indexOf(":", slash);
+    return {
+      machine: key.slice(0, slash), harness: key.slice(slash + 1, colon) as Session["harness"], key, id: key.slice(colon + 1), title: "",
+      cwd: o.cwd, status: "idle", detail: "", model: "", updatedAt: Date.now(), archived: false, stoppable: false, open: o,
+    };
+  };
   const placeholder = (p: Pick, l: Launch, prompt?: string): Session => ({
     machine: p.machine, harness: p.harness, key: sessionKey(p.machine, p.harness, `new-${Date.now()}`), id: "", title: prompt ?? `new ${p.harness} session`,
     cwd: l.cwd, status: "working", detail: "", model: "", updatedAt: Date.now(), archived: false, stoppable: false, open: { cmd: l.cmd, cwd: l.cwd },
@@ -498,6 +508,7 @@ function App(props: { store: DashStore; single?: Single }) {
   async function startSingle(single: Single) {
     // After the first render: showing a pane suspends the renderer.
     await Bun.sleep(0);
+    if (single.kind === "open" && single.open) return open(fromKey(single.key, single.open));
     if (single.kind === "open") {
       const find = () => props.store.rows().find((s) => s.key === single.key);
       if (!(await until(() => !!find()))) return void quit(1, `no session ${single.key}`);

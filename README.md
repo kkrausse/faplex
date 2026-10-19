@@ -202,6 +202,8 @@ the machines in the config file.
   quits when its stdin closes.
 - `faplex open <key>` opens one session by its `machine/harness:id` key, exactly like opening a
   row, and exits on ctrl+] or ← at an empty prompt. Run it with the terminal handed over.
+  `--open <json>` passes the session's `open` from `watch`, so it attaches at once instead of
+  waiting for the first listing (seconds with many Claude sessions).
 - `faplex new --machine <id> --harness <h> [--dir <dir>] [--prompt <text>] [--tag <tag>]...`
   starts a session the way the new-session picker does and opens it like `open`. Tags are
   free text (a ticket id, say) kept in `~/.local/state/faplex/tags.json` and listed by `watch`.
