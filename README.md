@@ -216,6 +216,19 @@ the machines in the config file.
   Without `--dir`, the picker's default for that machine is used. With `--background` it
   returns once the session is listed and working instead of opening it.
 
+Three more are one-shot, for a script or an agent keeping track of other sessions:
+
+- `faplex ls [--json] [--all]` prints the list once, newest first: one line per session (key,
+  status, age, tags, title, its last note, folder), or the rows as a JSON array. Archived
+  sessions are left out unless `--all`.
+- `faplex tail <key> [-n <count>]` prints a session's last messages (3 by default): prompts and
+  replies only, no tool calls or thinking, long ones cut at 2000 characters. It reads the
+  harness's record without touching the session. Claude and OpenCode.
+- `faplex send <key> [<text>]` types a message at a session's prompt, from stdin when no text is
+  given. A busy session takes it after its current turn, like a message typed while it works.
+  For Claude it attaches in a hidden terminal and refuses when the prompt isn't empty (a
+  permission menu, a question, a draft) rather than type into it. Claude and OpenCode.
+
 [GHUI](https://github.com/kkrausse/ghui) uses them to list and start sessions under Linear tickets.
 
 ## Providers

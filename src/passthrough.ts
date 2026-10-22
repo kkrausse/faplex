@@ -31,6 +31,8 @@ export interface Shadow {
   atPromptStart(): boolean;
   /** Claude's input line, the last one starting with ❯. */
   claudeInput(): string | undefined;
+  /** Every line on screen. */
+  lines(): string[];
   destroy(): void;
 }
 
@@ -86,6 +88,9 @@ export function createShadow(cols: number, rows: number): Shadow {
     },
     claudeInput() {
       return frame()?.lines.findLast((l) => CLAUDE_INPUT.test(l))?.trimEnd();
+    },
+    lines() {
+      return frame()?.lines ?? [];
     },
     destroy() {
       if (handle === null) return;

@@ -17,11 +17,14 @@ import { loadConfig, type Config } from "./config.ts";
 import { addTags } from "./tags.ts";
 import { defaultDir, watch } from "./watch.ts";
 import { startInBackground } from "./background.ts";
+import { listOnce } from "./ls.ts";
+import { tail } from "./transcript.ts";
+import { send } from "./send.ts";
 import { sourceKey } from "./store.ts";
 
 const cmd = parseCommand(process.argv.slice(2));
-// A session pane run by another program (`open`, `new`) only needs its session's machine.
-const only = cmd.kind === "open" ? cmd.key.slice(0, cmd.key.indexOf("/")) : cmd.kind === "new" ? cmd.machine : undefined;
+// A session pane run by another program (`open`, `new`), `tail` and `send` only need the session's machine.
+const only = cmd.kind === "open" || cmd.kind === "tail" || cmd.kind === "send" ? cmd.key.slice(0, cmd.key.indexOf("/")) : cmd.kind === "new" ? cmd.machine : undefined;
 let config: Config;
 try {
   config = loadConfig(cmd.kind === "dashboard" ? cmd.hosts : []);
@@ -36,8 +39,8 @@ try {
 register();
 
 const store = createDashStore(config);
-// `open --open` attaches without the list, so it starts no sources at all.
-if (!(cmd.kind === "open" && cmd.open)) store.start();
+// `open --open` attaches without the list, and `tail` and `send` ask the harness directly, so they start no sources at all.
+if (!((cmd.kind === "open" && cmd.open) || cmd.kind === "tail" || cmd.kind === "send")) store.start();
 
 // A native CLI running in a PTY (over ssh for remote machines). While it is open the dashboard's
 // renderer is suspended and the CLI owns the real terminal: output and keys pass straight through.
@@ -602,4 +605,10 @@ else if (cmd.kind === "new" && cmd.background) {
   const code = await startInBackground(store, cmd);
   await store.stop();
   process.exit(code);
-} else await render(() => <App store={store} single={cmd.kind === "dashboard" ? undefined : cmd} />, { exitOnCtrlC: false, targetFps: 30 });
+} else if (cmd.kind === "ls") {
+  const code = await listOnce(store, cmd);
+  await store.stop();
+  process.exit(code);
+} else if (cmd.kind === "tail") process.exit(await tail(store.machine, cmd));
+else if (cmd.kind === "send") process.exit(await send(store.machine, cmd));
+else await render(() => <App store={store} single={cmd.kind === "dashboard" ? undefined : cmd} />, { exitOnCtrlC: false, targetFps: 30 });

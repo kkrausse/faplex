@@ -50,6 +50,13 @@ export type Session = {
 
 export const sessionKey = (machine: string, harness: Harness, id: string) => `${machine}/${harness}:${id}`;
 
+/** The parts of a `machine/harness:id` key; undefined when it isn't one. */
+export function parseKey(key: string): { machine: string; harness: Harness; id: string } | undefined {
+  const m = key.match(/^([^/]+)\/([^:]+):(.+)$/);
+  if (!m || !HARNESSES.includes(m[2] as Harness)) return undefined;
+  return { machine: m[1]!, harness: m[2] as Harness, id: m[3]! };
+}
+
 /** Live activity overrides stale metadata; an outcome alone doesn't make a known draft used. */
 export const hasStarted = (s: Pick<Session, "status" | "prompted">) =>
   s.prompted === true || s.status === "working" || s.status === "needs" || (s.prompted !== false && s.status !== "idle");
