@@ -24,6 +24,8 @@ export interface Config {
   readonly machines: readonly Machine[];
   /** A finished session untouched for this long is archived. */
   readonly archiveAfterMs: number;
+  /** The same for a session tagged `keep` (tags.ts). */
+  readonly keepArchiveAfterMs: number;
   /** A session client that hasn't been on screen for this long is closed. */
   readonly closeHiddenAfterMs: number;
   /** Copy local files pasted or dropped into a remote session to that machine (drop.ts). */
@@ -49,6 +51,7 @@ export const ConfigSchema = Schema.Struct({
   $schema: Schema.optionalKey(Schema.String),
   machines: Schema.optionalKey(Schema.Array(MachineSchema).annotate({ description: "Machines to list besides this one. This machine is always listed; an entry without `ssh` names or configures it." })),
   archiveAfterHours: positive("A finished session untouched for this many hours moves to Archived: how quickly Finished empties.", 24),
+  keepArchiveAfterHours: positive("archiveAfterHours for a session tagged `keep` (faplex new --tag keep), in `watch` and `ls`.", 120),
   closeHiddenAfterMinutes: positive("A session client not shown for this many minutes is closed. The agent carries on in its daemon.", 15),
   uploadDrops: Schema.optionalKey(
     Schema.Boolean.annotate({
@@ -111,6 +114,7 @@ export function loadConfig(hosts: readonly string[] = []): Config {
   return {
     machines,
     archiveAfterMs: (raw.archiveAfterHours ?? 24) * 3600_000,
+    keepArchiveAfterMs: (raw.keepArchiveAfterHours ?? 120) * 3600_000,
     closeHiddenAfterMs: (raw.closeHiddenAfterMinutes ?? 15) * 60_000,
     uploadDrops: raw.uploadDrops ?? false,
     opencodeMini: raw.opencodeMini ?? false,

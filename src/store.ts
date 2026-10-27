@@ -159,7 +159,7 @@ export function createDashStore(config: Config) {
   };
   const archivedOf = (s: Session, now = Date.now(), keep = false) => {
     const a = state.archiving[s.key];
-    return (!!a && a.failed === undefined) || isArchived(s, state.marks[s.machine], now, keep ? Infinity : config.archiveAfterMs);
+    return (!!a && a.failed === undefined) || isArchived(s, state.marks[s.machine], now, keep ? config.keepArchiveAfterMs : config.archiveAfterMs);
   };
 
   return {

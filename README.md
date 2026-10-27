@@ -107,6 +107,7 @@ To keep them, `~/.config/faplex/config.json`, every key optional:
     `~/.opencode/bin` are always added, since non-interactive ssh skips `.bashrc`.
 - `archiveAfterHours` (default 24): a finished session untouched for this long moves to
   Archived. This is the knob for how quickly Finished empties.
+- `keepArchiveAfterHours` (default 120): the same for a session tagged `keep`, in `watch` and `ls`.
 - `closeHiddenAfterMinutes` (default 15): how long a session client you aren't looking at is
   kept before it is closed.
 - `uploadDrops` (default false): with a remote session open, a pasted or dropped path to a local
@@ -199,7 +200,8 @@ the machines in the config file.
   machines with the start dir a new session there defaults to, each machine × harness with its
   problem if any (so a picker can grey out what is missing), the last machine × harness picked,
   and every session with its status, `archived` as the dashboard counts it, and its `tags`. A
-  session tagged `keep` never ages into the archive here or in `ls`, only when archived. It
+  session tagged `keep` ages into the archive after `keepArchiveAfterHours` (default 120)
+  here and in `ls`, not `archiveAfterHours`. It
   quits when its stdin closes. It also keeps the clients of sessions opened through it, so
   reopening one is a repaint: the line carries a `socket` (owner-only Unix socket); connect,
   write `{"key","cols","rows"}` and a newline, then relay raw keys in and output out until

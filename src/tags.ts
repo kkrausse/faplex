@@ -9,7 +9,7 @@ const FILE = `${STATE_DIR}/tags.json`;
 
 export type Tags = Record<string, string[]>;
 
-/** A session tagged `keep` never ages into the archive; only archiving it explicitly does. */
+/** A session tagged `keep` ages into the archive after `keepArchiveAfterHours` instead of `archiveAfterHours`. */
 export const KEEP_TAG = "keep";
 
 export function loadTags(): Tags {

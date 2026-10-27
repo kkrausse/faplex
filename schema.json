@@ -48,6 +48,12 @@
       "description": "A finished session untouched for this many hours moves to Archived: how quickly Finished empties.",
       "default": 24
     },
+    "keepArchiveAfterHours": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "archiveAfterHours for a session tagged `keep` (faplex new --tag keep), in `watch` and `ls`.",
+      "default": 120
+    },
     "closeHiddenAfterMinutes": {
       "type": "number",
       "exclusiveMinimum": 0,
