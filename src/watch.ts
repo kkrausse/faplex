@@ -11,7 +11,7 @@
 import type { Config } from "./config.ts";
 import { dirKey, loadRemembered } from "./last-pick.ts";
 import type { DashStore } from "./store.ts";
-import { loadTags } from "./tags.ts";
+import { KEEP_TAG, loadTags } from "./tags.ts";
 import { createHeld } from "./held.ts";
 
 const TICK_MS = 500;
@@ -34,7 +34,7 @@ export function watch(config: Config, store: DashStore) {
       harnesses: store.harnesses,
       lastPick: loadRemembered().pick ?? null,
       sources: Object.values(store.state.sources).map((s) => ({ machine: s.machine, harness: s.harness, loaded: s.loaded, problem: s.problem ?? null })),
-      sessions: store.rows().map((s) => ({ ...s, archived: store.archivedOf(s), tags: tags[s.key] ?? [] })),
+      sessions: store.rows().map((s) => ({ ...s, archived: store.archivedOf(s, Date.now(), !!tags[s.key]?.includes(KEEP_TAG)), tags: tags[s.key] ?? [] })),
       socket: held.path,
     });
     if (line === last) return;

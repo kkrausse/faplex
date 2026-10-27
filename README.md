@@ -198,7 +198,8 @@ the machines in the config file.
 - `faplex watch --json` prints the whole list as one JSON line, again on every change: the
   machines with the start dir a new session there defaults to, each machine × harness with its
   problem if any (so a picker can grey out what is missing), the last machine × harness picked,
-  and every session with its status, `archived` as the dashboard counts it, and its `tags`. It
+  and every session with its status, `archived` as the dashboard counts it, and its `tags`. A
+  session tagged `keep` never ages into the archive here or in `ls`, only when archived. It
   quits when its stdin closes. It also keeps the clients of sessions opened through it, so
   reopening one is a repaint: the line carries a `socket` (owner-only Unix socket); connect,
   write `{"key","cols","rows"}` and a newline, then relay raw keys in and output out until

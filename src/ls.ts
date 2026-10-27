@@ -8,7 +8,7 @@ import type { Command } from "./cli.ts";
 import { QUIET } from "./errors.ts";
 import { age } from "./format.ts";
 import type { DashStore } from "./store.ts";
-import { loadTags } from "./tags.ts";
+import { KEEP_TAG, loadTags } from "./tags.ts";
 
 const WAIT_MS = 20_000;
 const HOME = homedir();
@@ -23,7 +23,7 @@ export async function listOnce(store: DashStore, cmd: Extract<Command, { kind: "
   const tags = loadTags();
   const rows = store
     .rows()
-    .map((s) => ({ ...s, archived: store.archivedOf(s), tags: tags[s.key] ?? [] }))
+    .map((s) => ({ ...s, archived: store.archivedOf(s, Date.now(), !!tags[s.key]?.includes(KEEP_TAG)), tags: tags[s.key] ?? [] }))
     .filter((s) => cmd.all || !s.archived)
     .sort((a, b) => b.updatedAt - a.updatedAt);
   if (cmd.json) {
