@@ -4,7 +4,7 @@
 // has its newest at the bottom, so one you just answered lands next to Needs input; Needs input and
 // Finished are stacks with their newest on top (failed turns above the rest of Finished). Archived
 // keeps the order it had when the list opened.
-import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core";
+import { TextAttributes, type MouseEvent, type ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid";
 import { Index, Match, Show, Switch, batch, createEffect, createMemo, createSignal, on } from "solid-js";
 import type { Background, Session, Status } from "./session.ts";
@@ -195,6 +195,18 @@ export function SessionList(props: {
     if (d < 0 && index() === 0 && !filter()) return setSelected(NEW);
     if (d > 0 && archivedHidden && index() >= list.length - 1) select(archived[0]);
     else if (list.length) select(list[Math.min(list.length - 1, Math.max(0, index() + d))]);
+  };
+  // A wheel tick moves the selection a row and the scroll follows it, instead of scrolling away
+  // from it. ScrollBox scrolls in onMouseEvent, which runs even after preventDefault, so it is replaced.
+  const followWheel = (r: ScrollBoxRenderable) => {
+    scroll = r;
+    const box = r as unknown as { onMouseEvent: (e: MouseEvent) => void };
+    const base = box.onMouseEvent.bind(r);
+    box.onMouseEvent = (e) => {
+      const dir = e.type === "scroll" && !e.modifiers.shift ? e.scroll?.direction : undefined;
+      if (dir !== "up" && dir !== "down") return base(e);
+      if (props.active() && !menu()) move(dir === "down" ? 1 : -1);
+    };
   };
   /** Into Archived, or back out to the last row above it. */
   const toggleArchived = () => {
@@ -393,7 +405,7 @@ export function SessionList(props: {
           <Index each={problems().hints}>{(hint) => <text height={1} wrapMode="none" fg={colors.muted}>{hint()}</text>}</Index>
         </box>
       </Show>
-      <scrollbox ref={scroll} flexGrow={1} minHeight={0} scrollY scrollX={false} viewportCulling contentOptions={{ flexDirection: "column" }} verticalScrollbarOptions={{ visible: false }}>
+      <scrollbox ref={followWheel} flexGrow={1} minHeight={0} scrollY scrollX={false} viewportCulling contentOptions={{ flexDirection: "column" }} verticalScrollbarOptions={{ visible: false }}>
         <Index each={view().items}>
           {(it) => {
             const header = () => {
