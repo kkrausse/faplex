@@ -36,7 +36,8 @@ const retryPolicy = Schedule.exponential("1 second").pipe(
 
 export type DashStore = ReturnType<typeof createDashStore>;
 
-export function createDashStore(config: Config) {
+/** `quickFirst`: Claude rows show before their context is read (see hostFeed). */
+export function createDashStore(config: Config, quickFirst = true) {
   const machines = config.machines;
   // OpenCode Mini is opt-in (`opencodeMini`): without it there is no Mini choice and no `ocm` row.
   const harnesses = HARNESSES.filter((h) => h !== "opencode-mini" || config.opencodeMini);
@@ -91,7 +92,7 @@ export function createDashStore(config: Config) {
     const k = sourceKey(m.id, "claude");
     return supervise(
       k,
-      hostFeed(m, (f) => void (f ? refreshers.set(m.id, f) : refreshers.delete(m.id))).pipe(
+      hostFeed(m, (f) => void (f ? refreshers.set(m.id, f) : refreshers.delete(m.id)), quickFirst).pipe(
         Stream.runForEach((rec) =>
           Effect.gen(function* () {
             const marks = yield* parseMarks(rec.archive).pipe(Effect.option);

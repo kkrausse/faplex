@@ -38,7 +38,8 @@ try {
 }
 register();
 
-const store = createDashStore(config);
+// `ls` prints once, so it waits for the full first record.
+const store = createDashStore(config, cmd.kind !== "ls");
 // `open --open` attaches without the list, and `tail` and `send` ask the harness directly, so they start no sources at all.
 if (!((cmd.kind === "open" && cmd.open) || cmd.kind === "tail" || cmd.kind === "send")) store.start();
 

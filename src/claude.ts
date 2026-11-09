@@ -24,10 +24,13 @@ const TICK_S = 2;
 // takes ~20ms a file, 4.5s for a first tick of 245; it is only the fallback where there is no perl). Changed
 // files' texts follow their `@@job` / `@@ctx` lines as `@@text <id>` blocks. tail is given
 // /dev/null too so it always prints its `==> file <==` headers (BSD tail has no -v).
+// The first record leaves the transcripts out (most of a first tick's time), so the list shows
+// sooner; the full record follows at once.
 const LOOP = `
 J="$HOME/.claude/jobs"; P="$HOME/.claude/projects"; seen=""; seent=""
 if stat -c %Y / >/dev/null 2>&1; then mt() { stat -c '%Y %n' "$@" 2>/dev/null; }; else mt() { stat -f '%m %N' "$@" 2>/dev/null; }; fi
-{ while kill -0 $$ 2>/dev/null && echo; do sleep ${TICK_S}; done & cat; } | while read -r _; do {
+rec() {
+  quick=$1
   kill -0 $$ 2>/dev/null || exit
   echo "@@archive" || exit; cat "${ARCHIVE_FILE}" 2>/dev/null; echo
   if command -v claude >/dev/null 2>&1; then
@@ -47,6 +50,7 @@ EOF
     seen=$next
     [ $# -gt 0 ] && awk 'FNR == 1 { id = FILENAME; sub(/\\/state\\.json$/, "", id); sub(/.*\\//, "", id); print "@@text " id } { print }' "$@"
     set --
+    if [ -z "$quick" ]; then
     for sid in $(printf '%s\\n' "$out" | sed -n 's/^ *"sessionId": *"\\([A-Za-z0-9_-]*\\)".*/\\1/p'); do
       for f in "$P"/*/"$sid".jsonl; do [ -f "$f" ] && set -- "$@" "$f"; done
     done
@@ -61,18 +65,26 @@ $stats
 EOF
     seent=$next
     if [ $# -eq 0 ]; then :
-    elif command -v perl >/dev/null 2>&1; then perl -e 'for $f (@ARGV) { open(H, "<", $f) or next; $s = -s H; seek(H, $s > 400000 ? $s - 400000 : 0, 0); $l = "";
-      while (<H>) { $l = $_ if (index($_, q("usage":{"input_tokens")) >= 0 || index($_, q("subtype":"compact_boundary")) >= 0) && index($_, q("model":"<synthetic>")) < 0 }
-      close H; chomp $l; ($i = $f) =~ s{.*/}{}; $i =~ s{[.]jsonl$}{}; print "\\@\\@text $i\\n"; print "$l\\n" if $l ne "" }' "$@"
+    elif command -v perl >/dev/null 2>&1; then perl -e 'for $f (@ARGV) { open(H, "<", $f) or next; $s = -s H; seek(H, $s > 400000 ? $s - 400000 : 0, 0);
+      { local $/; $d = <H>; } close H; $l = ""; $p = length $d;
+      while ($p >= 0) { $a = rindex($d, q("usage":{"input_tokens"), $p); $b = rindex($d, q("subtype":"compact_boundary"), $p); $m = $a > $b ? $a : $b; last if $m < 0;
+        $ls = rindex($d, "\\n", $m) + 1; $le = index($d, "\\n", $m); $le = length $d if $le < 0; $c = substr($d, $ls, $le - $ls);
+        if (index($c, q("model":"<synthetic>")) < 0) { $l = $c; last } $p = $ls - 1 }
+      ($i = $f) =~ s{.*/}{}; $i =~ s{[.]jsonl$}{}; print "\\@\\@text $i\\n"; print "$l\\n" if $l ne "" }' "$@"
     else tail -c 400000 "$@" /dev/null 2>/dev/null | grep -e '^==> .* <==$' -e '"usage":{"input_tokens"' -e '"subtype":"compact_boundary"' | grep -v '"model":"<synthetic>"' | awk '
       function flush() { if (f != "" && f != "/dev/null") { s = f; sub(/.*\\//, "", s); sub(/\\.jsonl$/, "", s); print "@@text " s; if (last != "") print last } }
       /^==> .* <==$/ { flush(); f = substr($0, 5, length($0) - 8); last = ""; next }
       { last = $0 }
       END { flush() }'
     fi
+    fi
     set --
   else echo "@@claude missing"; fi
   echo "@@end"
+}
+{ while kill -0 $$ 2>/dev/null && echo; do sleep ${TICK_S}; done & cat; } | while read -r _; do {
+  [ -n "$started" ] || { started=1; rec quick; }
+  rec
 } </dev/null; done`;
 
 type Job = { mtime: number; text: string };
@@ -132,10 +144,11 @@ function step(acc: Acc, line: string): readonly [Acc, HostRecord[]] {
 /**
  * The host's records. Every tick emits, so silence means a stuck loop: after ~3 missed ticks the
  * stream fails and the caller's retry restarts the command. While running, `setRefresh` holds a
- * function that asks for a record now.
+ * function that asks for a record now. `quickFirst` sends a first record without transcripts (no
+ * context or model yet) ahead of the full one.
  */
-export const hostFeed = (m: Machine, setRefresh: (refresh: (() => void) | undefined) => void): Stream.Stream<HostRecord, SourceError> =>
-  lines(m, ["sh", "-c", LOOP], (write) => setRefresh(write && (() => write("\n")))).pipe(
+export const hostFeed = (m: Machine, setRefresh: (refresh: (() => void) | undefined) => void, quickFirst: boolean): Stream.Stream<HostRecord, SourceError> =>
+  lines(m, ["sh", "-c", (quickFirst ? "" : "started=1\n") + LOOP], (write) => setRefresh(write && (() => write("\n")))).pipe(
     Stream.mapAccum(() => ({ prevJobs: new Map(), prevTranscripts: new Map() }) as Acc, step),
     Stream.timeoutOrElse({ duration: `${TICK_S * 3 + 3} seconds`, orElse: () => Stream.fail(fail("failed", `${m.id}: claude loop stalled`)) }),
   );
