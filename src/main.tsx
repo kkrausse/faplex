@@ -72,16 +72,21 @@ type Client = {
   cap?: Timer;
   /** Claude's output until it is ready, written out in one go then, so it opens fully drawn. */
   buffered?: Uint8Array[];
+  /** When Claude's input box was first seen. */
+  boxAt?: number;
 };
 
 // A newly attached CLI takes keys once it turns on bracketed paste. OpenCode and Codex do that first
 // thing. Claude turns it on before its input box is drawn, and ← there opens Claude's own agents
 // view, so Claude also has to have drawn the box. Nothing is typed to find out: Claude takes keys
-// as soon as the box shows. A Claude showing a menu instead of its box is ready once its output has
-// been quiet for MENU_QUIET_MS. READY_CAP_MS (from the first output) covers a CLI that never turns
+// as soon as the box shows. It is ready once its output has been quiet for BOX_QUIET_MS after that
+// (BOX_CAP_MS at most), or for MENU_QUIET_MS when it shows a menu instead of its box. READY_CAP_MS (from the first output) covers a CLI that never turns
 // on bracketed paste.
 const READY_CAP_MS = 3000;
 const MENU_QUIET_MS = 300;
+const BOX_QUIET_MS = 80;
+// A working Claude never goes quiet.
+const BOX_CAP_MS = 400;
 const ATTACHING = "\x1b[2mattaching…\x1b[0m\r";
 
 const size = () => ({ cols: process.stdout.columns || 80, rows: process.stdout.rows || 24 });
@@ -259,11 +264,15 @@ function App(props: { store: DashStore; single?: Single }) {
           c.modes.track(text);
           if (!c.ready) {
             const paste = c.modes.on("2004");
-            if (paste && (!c.buffered || c.shadow.claudeInput() !== undefined)) markReady(c);
+            if (paste && !c.buffered) markReady(c);
             else if (paste) {
-              // No box: a menu or a question. It is drawn once the output goes quiet.
+              // Claude clears and redraws a few times as it starts: wait for that to go quiet, so
+              // the screen is painted once. Without a box (a menu, a question) wait longer.
+              const box = c.shadow.claudeInput() !== undefined;
+              if (box) c.boxAt ??= Date.now();
               clearTimeout(c.cap);
-              c.cap = setTimeout(() => markReady(c), MENU_QUIET_MS);
+              if (c.boxAt !== undefined && Date.now() - c.boxAt >= BOX_CAP_MS) markReady(c);
+              else c.cap = setTimeout(() => markReady(c), box ? BOX_QUIET_MS : MENU_QUIET_MS);
             } else c.cap ??= setTimeout(() => markReady(c), READY_CAP_MS);
           }
         },

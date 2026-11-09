@@ -37,6 +37,7 @@ type Pane = {
   held: Buffer[];
   cap?: Timer;
   buffered?: Uint8Array[];
+  boxAt?: number;
   /** Text to put in the input box, unsent, once the CLI takes keys. */
   typed?: string;
   /** Last time it was on screen; undefined while it has only been warmed. */
@@ -46,6 +47,9 @@ type Pane = {
 
 const READY_CAP_MS = 3000;
 const MENU_QUIET_MS = 300;
+const BOX_QUIET_MS = 80;
+// A working Claude never goes quiet.
+const BOX_CAP_MS = 400;
 /** A warmed client nobody opened is closed sooner than one that was looked at. */
 const WARM_UNUSED_MS = 2 * 60_000;
 const ATTACHING = "\x1b[2mattaching…\x1b[0m\r";
@@ -111,11 +115,15 @@ export function createHeld(config: Config, machine: (id: string) => Machine, loo
           // Claude turns on bracketed paste before its input box is drawn (see main.tsx).
           if (!p.ready) {
             const paste = p.modes.on("2004");
-            if (paste && (!p.buffered || p.shadow.claudeInput() !== undefined)) markReady(p);
+            if (paste && !p.buffered) markReady(p);
             else if (paste) {
-              // No box: a menu or a question. It is drawn once the output goes quiet.
+              // Claude clears and redraws a few times as it starts: wait for that to go quiet, so
+              // the screen is painted once. Without a box (a menu, a question) wait longer.
+              const box = p.shadow.claudeInput() !== undefined;
+              if (box) p.boxAt ??= Date.now();
               clearTimeout(p.cap);
-              p.cap = setTimeout(() => markReady(p), MENU_QUIET_MS);
+              if (p.boxAt !== undefined && Date.now() - p.boxAt >= BOX_CAP_MS) markReady(p);
+              else p.cap = setTimeout(() => markReady(p), box ? BOX_QUIET_MS : MENU_QUIET_MS);
             } else p.cap ??= setTimeout(() => markReady(p), READY_CAP_MS);
           }
         },
