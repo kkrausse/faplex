@@ -20,7 +20,8 @@ const TICK_S = 2;
 // forever as an orphan. So the reader quits when its write fails or the top-level sh ($$) is gone,
 // and the ticker when either of those took the reader.
 // Process starts dominate a tick (~100 sessions), so each tick spends a fixed few on all files at
-// once: one stat per kind, one awk for changed jobs, one tail for changed transcripts. Changed
+// once: one stat per kind, one awk for changed jobs, one perl for changed transcripts (BSD tail -c
+// takes ~20ms a file, 4.5s for a first tick of 245; it is only the fallback where there is no perl). Changed
 // files' texts follow their `@@job` / `@@ctx` lines as `@@text <id>` blocks. tail is given
 // /dev/null too so it always prints its `==> file <==` headers (BSD tail has no -v).
 const LOOP = `
@@ -59,11 +60,16 @@ EOF
 $stats
 EOF
     seent=$next
-    [ $# -gt 0 ] && tail -c 400000 "$@" /dev/null 2>/dev/null | grep -e '^==> .* <==$' -e '"usage":{"input_tokens"' -e '"subtype":"compact_boundary"' | grep -v '"model":"<synthetic>"' | awk '
+    if [ $# -eq 0 ]; then :
+    elif command -v perl >/dev/null 2>&1; then perl -e 'for $f (@ARGV) { open(H, "<", $f) or next; $s = -s H; seek(H, $s > 400000 ? $s - 400000 : 0, 0); $l = "";
+      while (<H>) { $l = $_ if (index($_, q("usage":{"input_tokens")) >= 0 || index($_, q("subtype":"compact_boundary")) >= 0) && index($_, q("model":"<synthetic>")) < 0 }
+      close H; chomp $l; ($i = $f) =~ s{.*/}{}; $i =~ s{[.]jsonl$}{}; print "\\@\\@text $i\\n"; print "$l\\n" if $l ne "" }' "$@"
+    else tail -c 400000 "$@" /dev/null 2>/dev/null | grep -e '^==> .* <==$' -e '"usage":{"input_tokens"' -e '"subtype":"compact_boundary"' | grep -v '"model":"<synthetic>"' | awk '
       function flush() { if (f != "" && f != "/dev/null") { s = f; sub(/.*\\//, "", s); sub(/\\.jsonl$/, "", s); print "@@text " s; if (last != "") print last } }
       /^==> .* <==$/ { flush(); f = substr($0, 5, length($0) - 8); last = ""; next }
       { last = $0 }
       END { flush() }'
+    fi
     set --
   else echo "@@claude missing"; fi
   echo "@@end"
