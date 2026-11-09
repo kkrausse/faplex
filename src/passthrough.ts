@@ -19,8 +19,10 @@ export const isLeftInput = (input: string) => isPlainLeft.test(input);
 // before it. The glyph is required: the start of a later line of a multi-line prompt is blank up to
 // the cursor too, and ← there moves to the end of the line above.
 const PROMPT_START = /^\s*[❯›>┃│]\s*$/;
-// Claude's input line. Read whole: Claude doesn't always leave the terminal's cursor where it types.
+// Claude's input box: a ❯ line right under a rule. The rule tells it from a ❯ message in the
+// transcript, which is drawn first. Read whole: Claude doesn't always leave the terminal's cursor where it types.
 const CLAUDE_INPUT = /^\s*❯/;
+const RULE = /^\s*─/;
 // OpenCode's input box has its bar on every line, so there a later line looks like the first one:
 // the same bar with text after it on the row above gives it away.
 const BAR = /^(\s*[┃│])\s*$/;
@@ -29,7 +31,7 @@ export interface Shadow {
   write(data: Uint8Array): void;
   resize(cols: number, rows: number): void;
   atPromptStart(): boolean;
-  /** Claude's input line, the last one starting with ❯. */
+  /** The first line of Claude's input box, undefined until the box is drawn. */
   claudeInput(): string | undefined;
   /** Every line on screen. */
   lines(): string[];
@@ -87,7 +89,8 @@ export function createShadow(cols: number, rows: number): Shadow {
       return PROMPT_START.test(at.before);
     },
     claudeInput() {
-      return frame()?.lines.findLast((l) => CLAUDE_INPUT.test(l))?.trimEnd();
+      const lines = frame()?.lines ?? [];
+      return lines.findLast((l, i) => CLAUDE_INPUT.test(l) && RULE.test(lines[i - 1] ?? ""))?.trimEnd();
     },
     lines() {
       return frame()?.lines ?? [];

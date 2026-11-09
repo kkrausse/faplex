@@ -70,20 +70,18 @@ type Client = {
   ready: boolean;
   held: Buffer[];
   cap?: Timer;
-  /** Claude's output until it is ready, written out in one go then: the probe never shows. */
+  /** Claude's output until it is ready, written out in one go then, so it opens fully drawn. */
   buffered?: Uint8Array[];
-  /** How far the probe got: "." typed, then erased. `base` is Claude's input line before it, if drawn yet. */
-  probe?: { step: "dot" | "erase"; base: string | undefined };
 };
 
 // A newly attached CLI takes keys once it turns on bracketed paste. OpenCode and Codex do that first
-// thing. Claude turns it on before its prompt is drawn, and ← there opens Claude's own agents view,
-// so Claude is probed after: a "." typed has to show on its input line and a backspace has to
-// erase it. Keys pass only once the dot is gone. A "." that doesn't show within PROBE_ECHO_MS (a
-// permission menu) lets keys pass, but a late one is still erased until the first key goes in.
-// READY_CAP_MS (from the first output) covers a CLI that never turns on bracketed paste.
+// thing. Claude turns it on before its input box is drawn, and ← there opens Claude's own agents
+// view, so Claude also has to have drawn the box. Nothing is typed to find out: Claude takes keys
+// as soon as the box shows. A Claude showing a menu instead of its box is ready once its output has
+// been quiet for MENU_QUIET_MS. READY_CAP_MS (from the first output) covers a CLI that never turns
+// on bracketed paste.
 const READY_CAP_MS = 3000;
-const PROBE_ECHO_MS = 1000;
+const MENU_QUIET_MS = 300;
 const ATTACHING = "\x1b[2mattaching…\x1b[0m\r";
 
 const size = () => ({ cols: process.stdout.columns || 80, rows: process.stdout.rows || 24 });
@@ -149,8 +147,6 @@ function App(props: { store: DashStore; single?: Single }) {
     if (isBackInput(input) || (isLeftInput(input) && empty)) return back();
     if (c.exited !== undefined) return;
     if (!c.ready) return void c.held.push(data);
-    // A "." showing from here on could be the user's.
-    c.probe = undefined;
     c.send(data);
   };
   const onResize = () => {
@@ -231,8 +227,6 @@ function App(props: { store: DashStore; single?: Single }) {
     if (c.ready) return;
     clearTimeout(c.cap);
     c.ready = true;
-    // From here a "." on the input line could be the user's.
-    if (c.held.length) c.probe = undefined;
     const buffered = c.buffered;
     c.buffered = undefined;
     if (view() === c) {
@@ -241,31 +235,6 @@ function App(props: { store: DashStore; single?: Single }) {
       for (const d of c.held) c.send(d);
     }
     c.held = [];
-  }
-
-  function probe(c: Client) {
-    const write = (k: string) => void (c.exited === undefined && c.proc.terminal?.write(k));
-    const p = c.probe;
-    if (!p) {
-      if (c.ready || !c.modes.on("2004")) return;
-      c.probe = { step: "dot", base: c.shadow.claudeInput() };
-      write(".");
-      clearTimeout(c.cap);
-      c.cap = setTimeout(() => markReady(c), PROBE_ECHO_MS);
-      return;
-    }
-    const line = c.shadow.claudeInput();
-    if (p.step === "dot" && line !== undefined && line !== p.base && line.endsWith(".")) {
-      p.step = "erase";
-      write("\x7f");
-      if (c.ready) return;
-      // The backspace is in; only its echo is outstanding.
-      clearTimeout(c.cap);
-      c.cap = setTimeout(() => markReady(c), PROBE_ECHO_MS);
-    } else if (p.step === "erase" && line !== undefined && (p.base === undefined ? !line.endsWith(".") : line === p.base)) {
-      c.probe = undefined;
-      markReady(c);
-    }
   }
 
   function spawn(s: Session, rows = size().rows): Client {
@@ -288,10 +257,14 @@ function App(props: { store: DashStore; single?: Single }) {
           const text = decoder.decode(d, { stream: true });
           c.tail = (c.tail + text).slice(-2000);
           c.modes.track(text);
-          if (c.probe || (!c.ready && c.buffered)) probe(c);
           if (!c.ready) {
-            if (!c.buffered && c.modes.on("2004")) markReady(c);
-            if (!c.ready) c.cap ??= setTimeout(() => markReady(c), READY_CAP_MS);
+            const paste = c.modes.on("2004");
+            if (paste && (!c.buffered || c.shadow.claudeInput() !== undefined)) markReady(c);
+            else if (paste) {
+              // No box: a menu or a question. It is drawn once the output goes quiet.
+              clearTimeout(c.cap);
+              c.cap = setTimeout(() => markReady(c), MENU_QUIET_MS);
+            } else c.cap ??= setTimeout(() => markReady(c), READY_CAP_MS);
           }
         },
       },

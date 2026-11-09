@@ -3,9 +3,8 @@
 // while it works.
 //
 // Claude has no command for this, so a `claude attach` runs in a PTY nobody sees: once its input
-// line is drawn and empty, a typed "." has to show there and be erased (as in held.ts), then the
-// text is pasted and Enter pressed. It counts as sent when the input line is empty again (taken)
-// or Claude offers to send the queued message now. Anything else on screen (a permission menu, a
+// box is drawn and empty, the text is pasted, has to show there, and Enter is pressed. It counts
+// as sent when the input line is empty again (taken) or Claude offers to send the queued message now. Anything else on screen (a permission menu, a
 // question, a draft) fails instead of being typed into. Killing the client afterwards leaves the
 // session running, queued message included. OpenCode takes it through its service's prompt
 // request. Codex isn't reached yet.
@@ -50,6 +49,8 @@ async function sendClaude(m: Machine, id: string, text: string): Promise<string 
   };
   // Claude puts a no-break space after its ❯.
   const input = () => shadow.claudeInput()?.replaceAll("\u00a0", " ");
+  // Claude shows a hint or a suggested prompt in an empty box; the cursor still sits right after the ❯.
+  const empty = () => input() === EMPTY || shadow.atPromptStart();
   const type = (s: string) => proc.terminal?.write(s);
   const lastWords = () => tail.replace(/\x1b\[[0-9;?<>=]*[a-zA-Z~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "").trim().split("\n").at(-1)?.trim() ?? "";
   // What this run typed and did not send is erased again before leaving: a Claude draft belongs to
@@ -60,27 +61,24 @@ async function sendClaude(m: Machine, id: string, text: string): Promise<string 
       return exited !== undefined ? `claude attach ${id} exited ${exited}: ${lastWords()}` : `claude attach ${id}: no input line after 15s`;
     // Let the first paint finish: a menu or a restored draft can land after the input line.
     await until(() => Date.now() - changedAt > 500, 3000);
-    if (input() !== EMPTY) return `${id} is not at an empty prompt (a menu, a question or a draft is open): open it to answer`;
+    if (!empty()) return `${id} is not at an empty prompt (a menu, a question or a draft is open): open it to answer`;
+    const before = input();
     typed = true;
-    type(".");
-    if (!(await until(() => input() === `${EMPTY} .`, 5000))) return `${id} did not echo at its prompt: open it to check`;
-    type("\x7f");
-    if (!(await until(() => input() === EMPTY, 3000))) return `${id}: could not clear the probe from its prompt`;
     type(`\x1b[200~${text}\x1b[201~`);
-    if (!(await until(() => input() !== EMPTY, 3000))) return `${id}: the message did not show at its prompt`;
+    if (!(await until(() => input() !== before && !empty(), 3000))) return `${id}: the message did not show at its prompt`;
     type("\r");
-    if (!(await until(() => input() === EMPTY || shadow.lines().some((l) => QUEUED.test(l)), 5000))) return `${id}: the message stayed at its prompt: open it to check`;
+    if (!(await until(() => empty() || shadow.lines().some((l) => QUEUED.test(l)), 5000))) return `${id}: the message stayed at its prompt: open it to check`;
     typed = false;
     return undefined;
   };
   try {
     const error = await run();
     if (!error || !typed || exited !== undefined) return error;
-    for (let i = 0; i < 3 && input() !== EMPTY; i++) {
+    for (let i = 0; i < 3 && !empty(); i++) {
       type("\x15");
-      await until(() => input() === EMPTY, 1000);
+      await until(empty, 1000);
     }
-    return input() === EMPTY ? error : `${error} (and what it typed is still at the prompt)`;
+    return empty() ? error : `${error} (and what it typed is still at the prompt)`;
   } finally {
     proc.kill();
     shadow.destroy();

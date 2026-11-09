@@ -1,15 +1,16 @@
 // Session clients kept by `watch` for the program reading it, so opening a session is a repaint
 // instead of a fresh attach. That program owns the terminal and `watch` does not, so the bytes go
 // over a Unix socket (owner-only), one connection per open: the program writes a JSON header line
-// ({ key, cols, rows }), then the raw keys; it gets the session's output back, and the
+// ({ key, cols, rows, typed? }), then the raw keys; it gets the session's output back, and the
 // connection ends when the session is left (ctrl+], or ← at an empty prompt). Window size and
 // "warm this one up" come as JSON lines on `watch`'s stdin. Only sessions `watch` lists can be
 // opened, with the command it lists for them: nothing a connection sends is run.
 //
 // The client handling follows the dashboard's (main.tsx): a hidden shadow screen for the ←
 // check, the harness's terminal modes undone on leaving and re-applied on opening, Claude's
-// output held until a typed "." shows and is erased, and hidden clients one row short so
+// output held until its input box is drawn, and hidden clients one row short so
 // opening is a real resize and the harness repaints.
+// `typed` in the header is pasted into the input box, unsent, once the CLI takes keys.
 import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { homedir, tmpdir } from "node:os";
@@ -36,14 +37,15 @@ type Pane = {
   held: Buffer[];
   cap?: Timer;
   buffered?: Uint8Array[];
-  probe?: { step: "dot" | "erase"; base: string | undefined };
+  /** Text to put in the input box, unsent, once the CLI takes keys. */
+  typed?: string;
   /** Last time it was on screen; undefined while it has only been warmed. */
   shownAt?: number;
   startedAt: number;
 };
 
 const READY_CAP_MS = 3000;
-const PROBE_ECHO_MS = 1000;
+const MENU_QUIET_MS = 300;
 /** A warmed client nobody opened is closed sooner than one that was looked at. */
 const WARM_UNUSED_MS = 2 * 60_000;
 const ATTACHING = "\x1b[2mattaching…\x1b[0m\r";
@@ -74,39 +76,15 @@ export function createHeld(config: Config, machine: (id: string) => Machine, loo
     if (p.ready) return;
     clearTimeout(p.cap);
     p.ready = true;
-    if (p.held.length) p.probe = undefined;
     const buffered = p.buffered;
     p.buffered = undefined;
     if (p.shown) {
       if (buffered) p.shown.write(Buffer.concat(["\r\x1b[2K", ...buffered].map((d) => Buffer.from(d))));
+      if (p.typed) send(p, p.modes.on("2004") ? `\x1b[200~${p.typed}\x1b[201~` : p.typed);
       for (const d of p.held) send(p, d);
     }
+    p.typed = undefined;
     p.held = [];
-  }
-
-  // Claude turns on bracketed paste before its prompt is drawn, so it is probed: a "." typed has to
-  // show on its input line and a backspace has to erase it before keys pass.
-  function probe(p: Pane) {
-    const step = p.probe;
-    if (!step) {
-      if (p.ready || !p.modes.on("2004")) return;
-      p.probe = { step: "dot", base: p.shadow.claudeInput() };
-      send(p, ".");
-      clearTimeout(p.cap);
-      p.cap = setTimeout(() => markReady(p), PROBE_ECHO_MS);
-      return;
-    }
-    const line = p.shadow.claudeInput();
-    if (step.step === "dot" && line !== undefined && line !== step.base && line.endsWith(".")) {
-      step.step = "erase";
-      send(p, "\x7f");
-      if (p.ready) return;
-      clearTimeout(p.cap);
-      p.cap = setTimeout(() => markReady(p), PROBE_ECHO_MS);
-    } else if (step.step === "erase" && line !== undefined && (step.base === undefined ? !line.endsWith(".") : line === step.base)) {
-      p.probe = undefined;
-      markReady(p);
-    }
   }
 
   function spawn(key: string, open: Open, rows: number): Pane {
@@ -130,10 +108,15 @@ export function createHeld(config: Config, machine: (id: string) => Machine, loo
           const text = decoder.decode(d, { stream: true });
           p.tail = (p.tail + text).slice(-2000);
           p.modes.track(text);
-          if (p.probe || (!p.ready && p.buffered)) probe(p);
+          // Claude turns on bracketed paste before its input box is drawn (see main.tsx).
           if (!p.ready) {
-            if (!p.buffered && p.modes.on("2004")) markReady(p);
-            if (!p.ready) p.cap ??= setTimeout(() => markReady(p), READY_CAP_MS);
+            const paste = p.modes.on("2004");
+            if (paste && (!p.buffered || p.shadow.claudeInput() !== undefined)) markReady(p);
+            else if (paste) {
+              // No box: a menu or a question. It is drawn once the output goes quiet.
+              clearTimeout(p.cap);
+              p.cap = setTimeout(() => markReady(p), MENU_QUIET_MS);
+            } else p.cap ??= setTimeout(() => markReady(p), READY_CAP_MS);
           }
         },
       },
@@ -185,7 +168,6 @@ export function createHeld(config: Config, machine: (id: string) => Machine, loo
     if (isBackInput(text) || (isLeftInput(text) && empty)) return leave(p);
     if (p.exited !== undefined) return;
     if (!p.ready) return void p.held.push(data);
-    p.probe = undefined;
     send(p, data);
   }
 
@@ -199,7 +181,7 @@ export function createHeld(config: Config, machine: (id: string) => Machine, loo
       header = Buffer.concat([header, chunk]);
       const nl = header.indexOf(10);
       if (nl === -1) return;
-      let h: { key?: string; cols?: number; rows?: number };
+      let h: { key?: string; cols?: number; rows?: number; typed?: string };
       try {
         h = JSON.parse(header.subarray(0, nl).toString());
       } catch {
@@ -212,6 +194,10 @@ export function createHeld(config: Config, machine: (id: string) => Machine, loo
       // A client that died while hidden is replaced.
       if (known?.exited !== undefined) drop(known);
       pane = panes.get(h.key) ?? spawn(h.key, open, size.rows);
+      if (h.typed) {
+        if (pane.ready) send(pane, pane.modes.on("2004") ? `\x1b[200~${h.typed}\x1b[201~` : h.typed);
+        else pane.typed = h.typed;
+      }
       show(pane, socket);
       const rest = header.subarray(nl + 1);
       if (rest.length) input(pane, rest);
