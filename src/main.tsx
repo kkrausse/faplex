@@ -8,7 +8,7 @@ import { dirKey, loadRemembered, remember } from "./last-pick.ts";
 import { SessionList } from "./list.tsx";
 import { on } from "./machines.ts";
 import { remoteDrops } from "./drop.ts";
-import { CLEAR, createModes, createShadow, isBackInput, isLeftInput, type Modes, type Shadow } from "./passthrough.ts";
+import { CLEAR, createModes, createShadow, createTitles, isBackInput, isLeftInput, type Modes, type Shadow, type Titles } from "./passthrough.ts";
 import { hasStarted, sessionKey, type Claim, type Session } from "./session.ts";
 import { colors } from "./theme.ts";
 import { register } from "./procs.ts";
@@ -58,6 +58,8 @@ type Client = {
   shadow: Shadow;
   /** Terminal modes the CLI switched on, undone for the list and re-applied on reopening. */
   modes: Modes;
+  /** Tab titles the CLI sets, kept under faplex's name. */
+  titles: Titles;
   exited?: number;
   /** Why it exited, when that wasn't a clean leave. */
   note?: string;
@@ -186,7 +188,7 @@ function App(props: { store: DashStore; single?: Single }) {
     if (!c) return;
     c.shownAt = now;
     renderer.suspend();
-    process.stdout.write(CLEAR + c.modes.restore());
+    process.stdout.write(CLEAR + c.modes.restore() + c.titles.current());
     if (c.exited === undefined) {
       fit(c, size().rows);
       if (c.buffered || !c.tail) process.stdout.write(ATTACHING);
@@ -246,7 +248,7 @@ function App(props: { store: DashStore; single?: Single }) {
   function spawn(s: Session, rows = size().rows): Client {
     const m = props.store.machine(s.machine);
     const { cols } = size();
-    const c: Client = { session: s, proc: undefined!, send: undefined!, shadow: createShadow(cols, rows), modes: createModes(), shownAt: Date.now(), tail: "", ready: false, held: [], buffered: s.harness === "claude" ? [] : undefined };
+    const c: Client = { session: s, proc: undefined!, send: undefined!, shadow: createShadow(cols, rows), modes: createModes(), titles: createTitles(TITLE), shownAt: Date.now(), tail: "", ready: false, held: [], buffered: s.harness === "claude" ? [] : undefined };
     const decoder = new TextDecoder();
     // Store values are proxies; Bun.spawn needs a plain array.
     const cmd = on(m, [...s.open!.cmd], { cwd: s.open!.cwd, tty: true });
@@ -257,8 +259,9 @@ function App(props: { store: DashStore; single?: Single }) {
         cols,
         rows,
         data: (_t, d) => {
-          if (c.buffered) c.buffered.push(d);
-          else if (view() === c && !quitting) process.stdout.write(d);
+          const out = c.titles.rewrite(d);
+          if (c.buffered) c.buffered.push(out);
+          else if (view() === c && !quitting) process.stdout.write(out);
           c.shadow.write(d);
           const text = decoder.decode(d, { stream: true });
           c.tail = (c.tail + text).slice(-2000);

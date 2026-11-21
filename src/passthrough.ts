@@ -163,3 +163,45 @@ export function createModes(): Modes {
     },
   };
 }
+
+export interface Titles {
+  /** The chunk with every tab title the harness sets (OSC 0/1/2) put under faplex's own. */
+  rewrite(chunk: Uint8Array): Uint8Array;
+  /** The sequence that puts back the last title the harness set, or faplex's bare one. */
+  current(): string;
+}
+
+// OSC 0/1/2, ended by BEL or ST. Worked on as latin1, so bytes map 1:1 and UTF-8 titles pass intact.
+const TITLE_SET = /\x1b\]([012]);([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
+// A title sequence cut off at the end of a chunk; held for the next one (capped, so a stray ESC ]
+// can't swallow output).
+const TITLE_UNFINISHED = /\x1b(?:\][012]?(?:;[^\x07\x1b]*)?(?:\x1b)?)?$/;
+const latin1 = (s: string) => Buffer.from(s, "utf8").toString("latin1");
+
+/**
+ * A web terminal names the browser tab after the terminal title, and a harness sets its own once
+ * it has the terminal, so the tab would stop saying faplex while a session is open. Each title it
+ * sets becomes `<base> · <its title>`.
+ */
+export function createTitles(base: string): Titles {
+  const prefix = latin1(`${base} · `);
+  const bare = latin1(base);
+  let last = bare;
+  let carry = "";
+  const set = (title: string) => `\x1b]0;${title}\x07`;
+  return {
+    rewrite(chunk) {
+      if (!carry && !chunk.includes(0x1b)) return chunk;
+      let text = carry + Buffer.from(chunk).toString("latin1");
+      carry = "";
+      const cut = text.match(TITLE_UNFINISHED)?.[0] ?? "";
+      if (cut && cut.length < 4096) {
+        carry = cut;
+        text = text.slice(0, -cut.length);
+      }
+      text = text.replace(TITLE_SET, (_m, _kind, title: string) => set((last = title ? prefix + title : bare)));
+      return Buffer.from(text, "latin1");
+    },
+    current: () => Buffer.from(set(last), "latin1").toString("utf8"),
+  };
+}
