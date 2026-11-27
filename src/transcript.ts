@@ -37,6 +37,13 @@ export function claudeMessages(jsonl: string): Message[] {
     } catch {
       continue;
     }
+    // A message typed while the agent was working is stored as a queued-command attachment, not a
+    // user line (Claude shows it to the agent mid-turn).
+    if (e.type === "attachment" && e.attachment?.type === "queued_command" && e.attachment.origin?.kind === "human" && !e.isSidechain) {
+      const text = textOf(e.attachment.prompt).trim();
+      if (text) out.push({ role: "user", at: Date.parse(e.attachment.timestamp ?? e.timestamp) || 0, text });
+      continue;
+    }
     if ((e.type !== "user" && e.type !== "assistant") || e.isSidechain || e.isMeta) continue;
     const text = textOf(e.message?.content).trim();
     if (!text || (e.type === "user" && (text.startsWith("<") || text.startsWith("[Request interrupted")))) continue;
