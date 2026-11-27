@@ -266,10 +266,10 @@ const create = (m: Machine, dir: string, prompt: string | undefined, metadata: R
   });
 
 /** Without a prompt the CLI opens its own new chat; with one, the session is created and prompted first. */
+// Always created through the API first (as mini is): a session that only came into being when the
+// TUI opened never existed for `new --background` (faplex-web's +), which then timed out.
 export const launchOpencode = (m: Machine, dir: string, prompt?: string, run: typeof sh = sh): Effect.Effect<{ cmd: string[]; cwd: string; claim: Claim }, SourceError> =>
-  prompt
-    ? create(m, dir, prompt, undefined, "", run).pipe(Effect.map((id) => ({ cmd: opencodeCommand(id, false), cwd: dir, claim: { id } })))
-    : Effect.succeed({ cmd: ["opencode", dir], cwd: dir, claim: { firstNewIn: dir } });
+  create(m, dir, prompt, undefined, "", run).pipe(Effect.map((id) => ({ cmd: opencodeCommand(id, false), cwd: dir, claim: { id } })));
 
 export const launchOpencodeMini = (m: Machine, dir: string, prompt?: string, run: typeof sh = sh) =>
   create(m, dir, prompt, MINI_METADATA, "opencode mini --help >/dev/null && ", run).pipe(
