@@ -519,7 +519,7 @@ function App(props: { store: DashStore; single?: Single }) {
     setWaiting(`starting ${p.harness} in ${dir}…`);
     let l: Launch;
     try {
-      l = await props.store.launch(p.machine, p.harness, dir, single.prompt);
+      l = await props.store.launch(p.machine, p.harness, dir, single.prompt, single.kind === "new" ? { model: single.model, effort: single.effort } : undefined);
     } catch (e) {
       return void quit(1, e instanceof Error ? e.message : String(e));
     }

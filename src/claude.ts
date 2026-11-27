@@ -9,7 +9,7 @@ import { Effect, Schema, Stream } from "effect";
 import { decodeJson, fail, firstLine, type SourceError } from "./errors.ts";
 import { exec, lines, type Machine } from "./machines.ts";
 import { ARCHIVE_FILE } from "./archive.ts";
-import { sessionKey, type Background, type ContextUsage, type Session, type Status } from "./session.ts";
+import { sessionKey, type Background, type ContextUsage, type ModelChoice, type Session, type Status } from "./session.ts";
 
 const TICK_S = 2;
 
@@ -281,9 +281,9 @@ export const claudeSessions = (m: Machine, rec: HostRecord): Effect.Effect<Sessi
   });
 
 /** A background session, so it stays attachable: idle ("send a prompt to start"), or working on `prompt`. */
-export const launchClaude = (m: Machine, dir: string, prompt?: string) =>
+export const launchClaude = (m: Machine, dir: string, prompt?: string, choice: ModelChoice = {}) =>
   Effect.gen(function* () {
-    const out = yield* exec(m, ["claude", "--bg", ...(prompt ? [prompt] : [])], { cwd: dir, timeout: 60_000 }).pipe(Effect.map((o) => o.stdout + o.stderr));
+    const out = yield* exec(m, ["claude", "--bg", ...(choice.model ? ["--model", choice.model] : []), ...(choice.effort ? ["--effort", choice.effort] : []), ...(prompt ? [prompt] : [])], { cwd: dir, timeout: 60_000 }).pipe(Effect.map((o) => o.stdout + o.stderr));
     // `claude --bg` refuses a folder that was never trusted; the prompt only comes up in the plain CLI.
     if (/Workspace not trusted/.test(out)) return { cmd: ["claude"], cwd: dir, trust: true as const };
     const id = out.replace(/\x1b\[[0-9;]*m/g, "").match(/backgrounded · (\w+)/)?.[1];

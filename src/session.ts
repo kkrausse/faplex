@@ -1,4 +1,6 @@
 export type Harness = "claude" | "opencode" | "opencode-mini" | "codex";
+/** A new session's model and effort, passed the harness's own way (flags, or OpenCode's API). */
+export type ModelChoice = { model?: string; effort?: string };
 export const HARNESSES: readonly Harness[] = ["claude", "opencode", "opencode-mini", "codex"];
 
 /**

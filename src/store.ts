@@ -4,7 +4,7 @@
 // ones with capped exponential backoff.
 import { createStore, reconcile } from "solid-js/store";
 import { Duration, Effect, Fiber, Schedule, Stream } from "effect";
-import type { Harness, Session } from "./session.ts";
+import type { Harness, ModelChoice, Session } from "./session.ts";
 import { HARNESSES } from "./session.ts";
 import { QUIET, fail, type SourceError } from "./errors.ts";
 import type { Config } from "./config.ts";
@@ -225,11 +225,11 @@ export function createDashStore(config: Config, quickFirst = true) {
       mark(s, false).catch(() => {});
     },
     /** With `prompt`, the session starts on it instead of waiting at an empty one. */
-    launch: (machineId: string, h: Harness, dir: string, prompt?: string): Promise<Launch> => {
+    launch: (machineId: string, h: Harness, dir: string, prompt?: string, choice: ModelChoice = {}): Promise<Launch> => {
       const m = machine(machineId);
       return Effect.runPromise(
         expand(m, dir).pipe(
-          Effect.flatMap((d): Effect.Effect<Launch, SourceError> => (h === "claude" ? launchClaude(m, d, prompt) : h === "opencode" ? launchOpencode(m, d, prompt) : h === "opencode-mini" ? launchOpencodeMini(m, d, prompt) : launchCodex(d, prompt))),
+          Effect.flatMap((d): Effect.Effect<Launch, SourceError> => (h === "claude" ? launchClaude(m, d, prompt, choice) : h === "opencode" ? launchOpencode(m, d, prompt, undefined, choice) : h === "opencode-mini" ? launchOpencodeMini(m, d, prompt, undefined, choice) : launchCodex(d, prompt, choice))),
         ),
       );
     },

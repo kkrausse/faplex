@@ -24,9 +24,12 @@ For other programs (every machine in the config file):
                        \`open\` from \`watch\`: it attaches at once, without listing
   faplex new --machine <id> --harness <${HARNESSES.join("|")}>
              [--dir <dir>] [--prompt <text>] [--tag <tag>]... [--background]
+             [--model <model>] [--effort <level>]
                        start a session and open it like \`open\`; tags are listed
                        with it by \`watch\`. --background returns once it is
-                       running instead of opening it
+                       running instead of opening it. --model / --effort:
+                       Claude's --model / --effort, Codex's -m and reasoning
+                       effort, OpenCode's <provider>/<model> and variant
   faplex ls [--json] [--all]
                        print the session list once, newest first: one line per
                        session, or a JSON array. --all includes archived ones
@@ -47,7 +50,7 @@ export type Command =
   | { kind: "dashboard"; hosts: string[] }
   | { kind: "watch" }
   | { kind: "open"; key: string; open?: { cmd: string[]; cwd: string } }
-  | { kind: "new"; machine: string; harness: Harness; dir?: string; prompt?: string; tags: string[]; background: boolean }
+  | { kind: "new"; machine: string; harness: Harness; dir?: string; prompt?: string; tags: string[]; background: boolean; model?: string; effort?: string }
   | { kind: "ls"; json: boolean; all: boolean }
   | { kind: "tail"; key: string; n: number; json: boolean }
   | { kind: "send"; key: string; text?: string };
@@ -88,7 +91,7 @@ export function parseCommand(args: string[]): Command {
     try {
       ({ values } = parseArgs({
         args: args.slice(1),
-        options: { machine: { type: "string" }, harness: { type: "string" }, dir: { type: "string" }, prompt: { type: "string" }, tag: { type: "string", multiple: true }, background: { type: "boolean" } },
+        options: { machine: { type: "string" }, harness: { type: "string" }, dir: { type: "string" }, prompt: { type: "string" }, tag: { type: "string", multiple: true }, background: { type: "boolean" }, model: { type: "string" }, effort: { type: "string" } },
       }));
     } catch (e) {
       return usage(e instanceof Error ? e.message : String(e));
@@ -96,7 +99,7 @@ export function parseCommand(args: string[]): Command {
     const harness = values.harness as Harness;
     if (!values.machine) usage("new needs --machine");
     if (!HARNESSES.includes(harness)) usage(`new needs --harness, one of ${HARNESSES.join(", ")}`);
-    return { kind: "new", machine: values.machine!, harness, dir: values.dir, prompt: values.prompt?.trim() || undefined, tags: values.tag ?? [], background: values.background ?? false };
+    return { kind: "new", machine: values.machine!, harness, dir: values.dir, prompt: values.prompt?.trim() || undefined, tags: values.tag ?? [], background: values.background ?? false, model: values.model?.trim() || undefined, effort: values.effort?.trim() || undefined };
   }
   if (args[0] === "ls") {
     const rest = args.slice(1);

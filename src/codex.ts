@@ -5,7 +5,7 @@ import { Cause, Effect, Queue, Schema, Stream } from "effect";
 import { CodexRpc } from "./codex-rpc.ts";
 import { decodeValue, fail, type SourceError } from "./errors.ts";
 import { forward, sh, type Machine } from "./machines.ts";
-import { sessionKey, type ContextUsage, type Session, type Status } from "./session.ts";
+import { sessionKey, type ContextUsage, type ModelChoice, type Session, type Status } from "./session.ts";
 import { subagentSummary } from "./metrics.ts";
 import { readPages } from "./pages.ts";
 
@@ -145,4 +145,4 @@ export const codexSessions = (m: Machine, setStop: (stop: ((id: string) => Effec
     }),
   );
 
-export const launchCodex = (dir: string, prompt?: string) => Effect.succeed({ cmd: ["codex", "-C", dir, ...(prompt ? [prompt] : [])], cwd: dir, claim: { firstNewIn: dir } });
+export const launchCodex = (dir: string, prompt?: string, choice: ModelChoice = {}) => Effect.succeed({ cmd: ["codex", "-C", dir, ...(choice.model ? ["-m", choice.model] : []), ...(choice.effort ? ["-c", `model_reasoning_effort="${choice.effort}"`] : []), ...(prompt ? [prompt] : [])], cwd: dir, claim: { firstNewIn: dir } });

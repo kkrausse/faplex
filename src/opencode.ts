@@ -5,7 +5,7 @@
 import { Effect, Schema, Stream } from "effect";
 import { decodeJson, decodeValue, fail, firstLine, type SourceError } from "./errors.ts";
 import { forward, q, sh, type Machine } from "./machines.ts";
-import { sessionKey, type Claim, type ContextUsage, type Session, type Status } from "./session.ts";
+import { sessionKey, type Claim, type ContextUsage, type ModelChoice, type Session, type Status } from "./session.ts";
 import { latestContext, subagentSummary } from "./metrics.ts";
 import { readPages } from "./pages.ts";
 
@@ -252,12 +252,20 @@ const Created = decodeJson(Schema.Struct({ data: Schema.Struct({ id: Schema.Stri
  * send its first prompt there: the CLI's `--prompt` only fills in the input box. Claimed by ID
  * instead of guessing among concurrent new sessions.
  */
-const create = (m: Machine, dir: string, prompt: string | undefined, metadata: Record<string, string> | undefined, check: string, run: typeof sh) =>
+const create = (m: Machine, dir: string, prompt: string | undefined, metadata: Record<string, string> | undefined, check: string, run: typeof sh, choice: ModelChoice = {}) =>
   Effect.gen(function* () {
     const body = JSON.stringify({ location: { directory: dir }, ...(metadata ? { metadata } : {}) });
     const out = yield* run(m, `${check}opencode api post /api/session --data ${q(body)}`);
     if (out.code !== 0) return yield* fail("failed", firstLine(out.stderr) || `opencode launch exited ${out.code}`);
     const { data: { id } } = yield* Created(out.stdout);
+    // The model ("<provider>/<model>") and effort (its variant) go on before the first message.
+    if (choice.model) {
+      const slash = choice.model.indexOf("/");
+      if (slash < 1) return yield* fail("failed", `opencode model "${choice.model}": expected <provider>/<model>`);
+      const model = { providerID: choice.model.slice(0, slash), id: choice.model.slice(slash + 1), ...(choice.effort ? { variant: choice.effort } : {}) };
+      const set = yield* run(m, `opencode api post /api/session/${q(id)}/model --data ${q(JSON.stringify({ model }))}`);
+      if (set.code !== 0) return yield* fail("failed", firstLine(set.stderr) || `opencode model exited ${set.code}`);
+    }
     if (prompt) {
       const sent = yield* run(m, `opencode api post /api/session/${q(id)}/prompt --data ${q(JSON.stringify({ text: prompt }))}`);
       if (sent.code !== 0) return yield* fail("failed", firstLine(sent.stderr) || `opencode prompt exited ${sent.code}`);
@@ -268,10 +276,10 @@ const create = (m: Machine, dir: string, prompt: string | undefined, metadata: R
 /** Without a prompt the CLI opens its own new chat; with one, the session is created and prompted first. */
 // Always created through the API first (as mini is): a session that only came into being when the
 // TUI opened never existed for `new --background` (faplex-web's +), which then timed out.
-export const launchOpencode = (m: Machine, dir: string, prompt?: string, run: typeof sh = sh): Effect.Effect<{ cmd: string[]; cwd: string; claim: Claim }, SourceError> =>
-  create(m, dir, prompt, undefined, "", run).pipe(Effect.map((id) => ({ cmd: opencodeCommand(id, false), cwd: dir, claim: { id } })));
+export const launchOpencode = (m: Machine, dir: string, prompt?: string, run: typeof sh = sh, choice: ModelChoice = {}): Effect.Effect<{ cmd: string[]; cwd: string; claim: Claim }, SourceError> =>
+  create(m, dir, prompt, undefined, "", run, choice).pipe(Effect.map((id) => ({ cmd: opencodeCommand(id, false), cwd: dir, claim: { id } })));
 
-export const launchOpencodeMini = (m: Machine, dir: string, prompt?: string, run: typeof sh = sh) =>
-  create(m, dir, prompt, MINI_METADATA, "opencode mini --help >/dev/null && ", run).pipe(
+export const launchOpencodeMini = (m: Machine, dir: string, prompt?: string, run: typeof sh = sh, choice: ModelChoice = {}) =>
+  create(m, dir, prompt, MINI_METADATA, "opencode mini --help >/dev/null && ", run, choice).pipe(
     Effect.map((id) => ({ cmd: opencodeCommand(id, true), cwd: dir, claim: { id } })),
   );

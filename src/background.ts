@@ -39,7 +39,7 @@ export async function startInBackground(store: DashStore, cmd: Extract<Command, 
   const known = new Set(store.rows(cmd.harness).filter((s) => s.machine === m.id).map((s) => s.key));
   let l;
   try {
-    l = await store.launch(m.id, cmd.harness, dir, cmd.prompt);
+    l = await store.launch(m.id, cmd.harness, dir, cmd.prompt, { model: cmd.model, effort: cmd.effort });
   } catch (e) {
     return fail(e instanceof Error ? e.message : String(e));
   }
