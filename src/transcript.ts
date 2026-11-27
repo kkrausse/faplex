@@ -101,6 +101,11 @@ export async function tail(machine: (id: string) => Machine, cmd: Extract<Comman
     process.stderr.write(`faplex: ${e instanceof Error ? e.message : String(e)}\n`);
     return 1;
   }
+  // --json: whole messages, for programs (faplex-web's reading view), as one JSON array.
+  if (cmd.json) {
+    process.stdout.write(JSON.stringify(messages.slice(-cmd.n)) + "\n");
+    return 0;
+  }
   for (const msg of messages.slice(-cmd.n)) {
     const cut = msg.text.length - MAX_CHARS;
     const text = cut > 0 ? `${msg.text.slice(0, MAX_CHARS)}\n… (${cut} more chars)` : msg.text;

@@ -30,9 +30,10 @@ For other programs (every machine in the config file):
   faplex ls [--json] [--all]
                        print the session list once, newest first: one line per
                        session, or a JSON array. --all includes archived ones
-  faplex tail <key> [-n <count>]
+  faplex tail <key> [-n <count>] [--json]
                        print a session's last messages (default 3): prompts and
-                       replies only, long ones cut. Claude and OpenCode
+                       replies only, long ones cut (--json: whole, as a JSON
+                       array). Claude and OpenCode
   faplex send <key> [<text>]
                        type a message at a session's prompt (text from stdin when
                        not given); a busy session takes it after its current
@@ -48,7 +49,7 @@ export type Command =
   | { kind: "open"; key: string; open?: { cmd: string[]; cwd: string } }
   | { kind: "new"; machine: string; harness: Harness; dir?: string; prompt?: string; tags: string[]; background: boolean }
   | { kind: "ls"; json: boolean; all: boolean }
-  | { kind: "tail"; key: string; n: number }
+  | { kind: "tail"; key: string; n: number; json: boolean }
   | { kind: "send"; key: string; text?: string };
 
 const usage = (message: string): never => {
@@ -103,10 +104,11 @@ export function parseCommand(args: string[]): Command {
     return { kind: "ls", json: rest.includes("--json"), all: rest.includes("--all") };
   }
   if (args[0] === "tail") {
-    const [, key, flag, count, ...extra] = args;
+    const json = args.includes("--json");
+    const [, key, flag, count, ...extra] = args.filter((a) => a !== "--json");
     const n = flag === undefined ? 3 : Number(count);
-    if (!key || !parseKey(key) || extra.length || (flag !== undefined && (flag !== "-n" || !Number.isInteger(n) || n < 1))) usage("tail takes one machine/harness:id key, optionally -n <count>");
-    return { kind: "tail", key: key!, n };
+    if (!key || !parseKey(key) || extra.length || (flag !== undefined && (flag !== "-n" || !Number.isInteger(n) || n < 1))) usage("tail takes one machine/harness:id key, optionally -n <count> and --json");
+    return { kind: "tail", key: key!, n, json };
   }
   if (args[0] === "send") {
     const [, key, ...words] = args;
