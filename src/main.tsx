@@ -16,6 +16,7 @@ import { parseCommand, type Command } from "./cli.ts";
 import { loadConfig, type Config } from "./config.ts";
 import { addTags } from "./tags.ts";
 import { defaultDir, watch } from "./watch.ts";
+import { archiveCommand } from "./archive-cmd.ts";
 import { startInBackground } from "./background.ts";
 import { listOnce } from "./ls.ts";
 import { tail } from "./transcript.ts";
@@ -24,7 +25,7 @@ import { sourceKey } from "./store.ts";
 
 const cmd = parseCommand(process.argv.slice(2));
 // A session pane run by another program (`open`, `new`), `tail` and `send` only need the session's machine.
-const only = cmd.kind === "open" || cmd.kind === "tail" || cmd.kind === "send" ? cmd.key.slice(0, cmd.key.indexOf("/")) : cmd.kind === "new" ? cmd.machine : undefined;
+const only = cmd.kind === "open" || cmd.kind === "tail" || cmd.kind === "send" || cmd.kind === "archive" ? cmd.key.slice(0, cmd.key.indexOf("/")) : cmd.kind === "new" ? cmd.machine : undefined;
 let config: Config;
 try {
   config = loadConfig(cmd.kind === "dashboard" ? cmd.hosts : []);
@@ -597,4 +598,5 @@ else if (cmd.kind === "new" && cmd.background) {
   process.exit(code);
 } else if (cmd.kind === "tail") process.exit(await tail(store.machine, cmd));
 else if (cmd.kind === "send") process.exit(await send(store.machine, cmd));
+else if (cmd.kind === "archive") process.exit(await archiveCommand(store, cmd));
 else await render(() => <App store={store} single={cmd.kind === "dashboard" ? undefined : cmd} />, { exitOnCtrlC: false, targetFps: 30 });

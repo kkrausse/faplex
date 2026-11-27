@@ -30,6 +30,7 @@ For other programs (every machine in the config file):
                        running instead of opening it. --model / --effort:
                        Claude's --model / --effort, Codex's -m and reasoning
                        effort, OpenCode's <provider>/<model> and variant
+  faplex archive <key>  stop a session (if running) and archive it, as x does
   faplex ls [--json] [--all]
                        print the session list once, newest first: one line per
                        session, or a JSON array. --all includes archived ones
@@ -53,7 +54,8 @@ export type Command =
   | { kind: "new"; machine: string; harness: Harness; dir?: string; prompt?: string; tags: string[]; background: boolean; model?: string; effort?: string }
   | { kind: "ls"; json: boolean; all: boolean }
   | { kind: "tail"; key: string; n: number; json: boolean }
-  | { kind: "send"; key: string; text?: string };
+  | { kind: "send"; key: string; text?: string }
+  | { kind: "archive"; key: string };
 
 const usage = (message: string): never => {
   process.stderr.write(`faplex: ${message}\n\n${HELP}`);
@@ -100,6 +102,11 @@ export function parseCommand(args: string[]): Command {
     if (!values.machine) usage("new needs --machine");
     if (!HARNESSES.includes(harness)) usage(`new needs --harness, one of ${HARNESSES.join(", ")}`);
     return { kind: "new", machine: values.machine!, harness, dir: values.dir, prompt: values.prompt?.trim() || undefined, tags: values.tag ?? [], background: values.background ?? false, model: values.model?.trim() || undefined, effort: values.effort?.trim() || undefined };
+  }
+  if (args[0] === "archive") {
+    const [, key, ...extra] = args;
+    if (!key || !parseKey(key) || extra.length) usage("archive takes one machine/harness:id key");
+    return { kind: "archive", key: key! };
   }
   if (args[0] === "ls") {
     const rest = args.slice(1);
